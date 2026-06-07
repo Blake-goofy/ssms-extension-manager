@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SsmsExtensionManager.Core\SsmsExtensionManager.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <AppUpdateSourceUrl Condition="'$(AppUpdateSourceUrl)' == ''"></AppUpdateSourceUrl>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <StartupObject>SsmsExtensionManager.App.App</StartupObject>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <Target Name="GenerateAppBuildInfo" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <AppBuildInfoLine Include="// &lt;auto-generated /&gt;" />
+      <AppBuildInfoLine Include="namespace SsmsExtensionManager.App%3B" />
+      <AppBuildInfoLine Include="internal static class AppBuildInfo" />
+      <AppBuildInfoLine Include="{" />
+      <AppBuildInfoLine Include="    public const string Version = &quot;$(Version)&quot;%3B" />
+      <AppBuildInfoLine Include="    public const string UpdateSourceUrl = &quot;$(AppUpdateSourceUrl)&quot;%3B" />
+      <AppBuildInfoLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)AppBuildInfo.g.cs"
+                      Lines="@(AppBuildInfoLine)"
+                      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)AppBuildInfo.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>

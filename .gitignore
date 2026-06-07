@@ -1,0 +1,34 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Tt]est[Rr]esult*/
+artifacts/
+
+# User and IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# NuGet and packages
+packages/
+*.nupkg
+*.snupkg
+
+# Logs and temp files
+*.log
+*.tmp
+*.cache
+*.pidb
+*.svclog
+
+# OS files
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,90 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer version to package, without the leading v"
+        required: true
+        default: "0.0.1"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore .NET tools
+        run: dotnet tool restore
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $version = $env:GITHUB_REF_NAME -replace "^v", ""
+          } else {
+            $version = "${{ github.event.inputs.version }}"
+          }
+
+          if ($version -notmatch "^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$") {
+            throw "Release version '$version' is not SemVer."
+          }
+
+          if ($version -match "^0\.0\.0($|[-+])") {
+            throw "Velopack requires package versions to be >= 0.0.1."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test .\SsmsExtensionManager.slnx --configuration Release
+
+      - name: Publish app
+        run: >
+          dotnet publish .\SsmsExtensionManager.App\SsmsExtensionManager.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output .\artifacts\publish
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:AppUpdateSourceUrl=https://github.com/${{ github.repository }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Pack Velopack release
+        run: >
+          dotnet tool run vpk pack
+          --packId SsmsExtensionManager
+          --packVersion ${{ steps.version.outputs.version }}
+          --packDir .\artifacts\publish
+          --mainExe SsmsExtensionManager.App.exe
+          --packTitle "SSMS Extension Manager"
+          --outputDir .\artifacts\Releases
+          --channel win
+          --runtime win-x64
+
+      - name: Upload GitHub release
+        run: >
+          dotnet tool run vpk upload github
+          --outputDir .\artifacts\Releases
+          --repoUrl https://github.com/${{ github.repository }}
+          --token "${{ secrets.GITHUB_TOKEN }}"
+          --publish true
+          --merge true
+          --tag v${{ steps.version.outputs.version }}
+          --releaseName "SSMS Extension Manager v${{ steps.version.outputs.version }}"

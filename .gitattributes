@@ -1,0 +1,20 @@
+* text=auto
+
+*.cs text diff=csharp
+*.csproj text
+*.sln text
+*.slnx text
+*.xaml text
+*.json text
+*.md text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.vsix binary
+*.zip binary

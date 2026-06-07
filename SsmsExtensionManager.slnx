@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SsmsExtensionManager.App/SsmsExtensionManager.App.csproj" />
+  <Project Path="SsmsExtensionManager.Core/SsmsExtensionManager.Core.csproj" />
+  <Project Path="SsmsExtensionManager.Tests/SsmsExtensionManager.Tests.csproj" />
+</Solution>
