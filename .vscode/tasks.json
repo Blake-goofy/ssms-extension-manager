@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run app for testing",
+      "type": "shell",
+      "command": "dotnet run --project .\\SsmsExtensionManager.App\\SsmsExtensionManager.App.csproj",
+      "problemMatcher": []
+    }
+  ]
+}

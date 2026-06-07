@@ -8,7 +8,6 @@ artifacts/
 
 # User and IDE files
 .vs/
-.vscode/
 .idea/
 *.user
 *.rsuser

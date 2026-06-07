@@ -23,6 +23,8 @@ Microsoft does not officially support third-party SSMS extensions. This app inte
 
 ## Run
 
+In VS Code, run the `Run app for testing` task.
+
 ```powershell
 dotnet run --project .\SsmsExtensionManager.App\SsmsExtensionManager.App.csproj
 ```
@@ -35,7 +37,7 @@ dotnet test .\SsmsExtensionManager.slnx
 
 ## Release
 
-Releases are packaged with Velopack and hosted on GitHub Releases. Local/dev builds default to `0.0.0`; Velopack packages must be `0.0.1` or greater, so the first installable release should be `v0.0.1`.
+Releases are packaged with Velopack and hosted on GitHub Releases.
 
 The release workflow stamps the app update source as the repository running the workflow:
 
@@ -43,19 +45,11 @@ The release workflow stamps the app update source as the repository running the 
 https://github.com/${{ github.repository }}
 ```
 
-To create a release manually in GitHub, run the `release` workflow with a version such as `0.0.1`, or push a tag:
+To create a release, run the `release` workflow in GitHub with a version such as `0.1.0`, or push a tag:
 
 ```powershell
-git tag v0.0.1
-git push origin v0.0.1
-```
-
-For local packaging, restore the local tools and pass the GitHub repository URL explicitly:
-
-```powershell
-dotnet tool restore
-dotnet publish .\SsmsExtensionManager.App\SsmsExtensionManager.App.csproj -c Release -r win-x64 --self-contained true -o .\artifacts\publish -p:Version=0.0.1 -p:AppUpdateSourceUrl=https://github.com/OWNER/REPO
-dotnet tool run vpk pack --packId SsmsExtensionManager --packVersion 0.0.1 --packDir .\artifacts\publish --mainExe SsmsExtensionManager.App.exe --packTitle "SSMS Extension Manager" --outputDir .\artifacts\Releases --channel win --runtime win-x64
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Known Gaps
