@@ -45,6 +45,54 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="GhostNavButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="13.5" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="Tag" Value="Active" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                            </MultiTrigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="Tag" Value="{x:Null}" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
+                            </MultiTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
@@ -77,148 +125,355 @@
 
         <Grid Margin="18"
               TextElement.Foreground="{DynamicResource ControlForegroundBrush}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,12">
-                <TextBlock Text="SSMS Extension Manager" FontSize="22" FontWeight="SemiBold" />
-                <TextBlock Text="Third-party SSMS extensions are not officially supported by Microsoft. Install only extensions you trust."
-                           Foreground="{DynamicResource WarningForegroundBrush}" Margin="0,4,0,0" />
-            </StackPanel>
-
-            <DataGrid Grid.Row="1"
-                      x:Name="ExtensionsGrid"
-                      AutoGenerateColumns="False"
-                      CanUserAddRows="False"
-                      CanUserDeleteRows="False"
-                      IsReadOnly="True"
-                      SelectionMode="Extended"
-                      SelectionChanged="ExtensionsGrid_SelectionChanged"
-                      PreviewMouseLeftButtonDown="ExtensionsGrid_PreviewMouseLeftButtonDown"
-                      PreviewMouseRightButtonDown="ExtensionsGrid_PreviewMouseRightButtonDown"
-                      PreviewMouseRightButtonUp="ExtensionsGrid_PreviewMouseRightButtonUp"
-                      HeadersVisibility="Column"
-                      GridLinesVisibility="Horizontal">
-                <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow">
-                        <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-                        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsInstalled}" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
-                                <Setter Property="FontStyle" Value="Italic" />
-                                <Setter Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
-                            </DataTrigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
-                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </DataGrid.RowStyle>
-                <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="Extension" Width="2.2*">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <TextBlock x:Name="ExtensionNameText"
-                                               Text="{Binding DisplayName}" />
-                                    <TextBlock x:Name="ExtensionNameLink"
-                                               Visibility="Collapsed">
-                                        <Hyperlink Click="ExtensionLink_Click">
-                                            <Run Text="{Binding DisplayName, Mode=OneWay}" />
-                                        </Hyperlink>
-                                    </TextBlock>
-                                </Grid>
-                                <DataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding GitHubUri}" Value="{x:Null}">
-                                        <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Visible" />
-                                        <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding HasGitHubUri}" Value="True">
-                                        <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Collapsed" />
-                                        <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </DataTemplate.Triggers>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110" />
-                    <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}" Width="1.1*" />
-                    <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="100" />
-                    <DataGridTextColumn Header="Latest" Binding="{Binding LatestVersion}" Width="100" />
-                    <DataGridTextColumn Header="Update Source" Binding="{Binding UpdateSourceText}" Width="2*" />
-                    <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90" />
-                </DataGrid.Columns>
-            </DataGrid>
-
-            <Popup Grid.Row="1"
-                   x:Name="RowActionsPopup"
-                   AllowsTransparency="True"
-                   Placement="RelativePoint"
-                   PlacementTarget="{Binding ElementName=ExtensionsGrid}"
-                   PopupAnimation="Fade"
-                   StaysOpen="True">
-                <Border Background="{DynamicResource PanelBackgroundBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        MinWidth="160"
-                        Padding="3"
-                        SnapsToDevicePixels="True">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="10"
-                                          Direction="270"
-                                          Opacity="0.18"
-                                          ShadowDepth="2"
-                                          Color="#000000" />
-                    </Border.Effect>
-                    <StackPanel>
-                        <Button x:Name="RowUpdateButton"
+            <Border Grid.Column="0"
+                    Background="{DynamicResource PanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="12,14"
+                    Margin="0,0,18,0">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,2">
+                        <Button x:Name="UpdateAppButton"
                                 Content="Update"
-                                Tag="Update"
-                                Style="{StaticResource RowActionButtonStyle}"
-                                Click="UpdateSelected_Click" />
-                        <Button x:Name="RowReinstallButton"
-                                Content="Reinstall"
-                                Tag="Reinstall"
-                                Style="{StaticResource RowActionButtonStyle}"
-                                Click="Reinstall_Click" />
-                        <Button x:Name="RowSetSourceButton"
-                                Content="Set Source"
-                                Tag="SetSource"
-                                Style="{StaticResource RowActionButtonStyle}"
-                                Click="SetSource_Click" />
-                        <Button x:Name="RowUninstallButton"
-                                Content="Uninstall"
-                                Tag="Uninstall"
-                                Style="{StaticResource RowActionButtonStyle}"
-                                Click="Uninstall_Click" />
-                        <Border x:Name="RowRemoveSeparator"
-                                Height="1"
-                                Margin="6,3"
-                                Background="{DynamicResource GridLineBrush}" />
-                        <Button x:Name="RowRemoveButton"
-                                Content="Remove from List"
-                                Tag="Remove"
-                                Style="{StaticResource RowActionButtonStyle}"
-                                Click="RemoveFromList_Click" />
-                    </StackPanel>
-                </Border>
-            </Popup>
+                                DockPanel.Dock="Right"
+                                Padding="6,2"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Visibility="Collapsed"
+                                Click="UpdateAppButton_Click" />
+                        <TextBlock Text="Menu"
+                                   FontSize="12"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource MutedForegroundBrush}" />
+                    </DockPanel>
+                    <Button x:Name="ManageNavButton"
+                            Style="{StaticResource GhostNavButtonStyle}"
+                            HorizontalAlignment="Stretch"
+                            Click="ManageNavButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="14"
+                                  Height="14"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Data="M48,244.8l126-126c0.7-0.7,1.4-1.5,2.1-2.3c20.3,6.8,43.6,2.1,59.8-14.1c17.5-17.5,21.6-43.3,12.2-64.7l-38.5,38.5 l-30.2-30.2l38.5-38.5c-21.4-9.3-47.2-5.2-64.7,12.2c-16.2,16.2-20.9,39.5-14.1,59.8c-0.8,0.6-1.6,1.3-2.3,2.1l-126,126 c-10.2,10.2-10.2,27,0,37.2l0,0C21,255,37.7,255,48,244.8z" />
+                            <TextBlock Text="Manage" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="BrowseNavButton"
+                            Style="{StaticResource GhostNavButtonStyle}"
+                            HorizontalAlignment="Stretch"
+                            Click="BrowseNavButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="14"
+                                  Height="14"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Data="M6,2.2 A3.8,3.8 0 1 1 5.999,2.2 M8.7,8.7 L12.5,12.5" />
+                            <TextBlock Text="Browse" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="SettingsNavButton"
+                            Style="{StaticResource GhostNavButtonStyle}"
+                            HorizontalAlignment="Stretch"
+                            Click="SettingsNavButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="14"
+                                  Height="14"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  Data="M4,13.743l-1,.579a1,1,0,0,0-.366,1.366l1.488,2.578a1,1,0,0,0,1.366.366L6.5,18.05a1.987,1.987,0,0,1,1.986,0l.02.011a1.989,1.989,0,0,1,1,1.724V21a1,1,0,0,0,1,1h3a1,1,0,0,0,1-1V19.782a1.985,1.985,0,0,1,.995-1.721l.021-.012a1.987,1.987,0,0,1,1.986,0l1.008.582a1,1,0,0,0,1.366-.366l1.488-2.578A1,1,0,0,0,21,14.322l-1-.579a1.994,1.994,0,0,1-1-1.733v-.021a1.991,1.991,0,0,1,1-1.732l1-.579a1,1,0,0,0,.366-1.366L19.876,5.734a1,1,0,0,0-1.366-.366L17.5,5.95a1.987,1.987,0,0,1-1.986,0L15.5,5.94a1.989,1.989,0,0,1-1-1.724V3a1,1,0,0,0-1-1h-3a1,1,0,0,0-1,1V4.294A1.856,1.856,0,0,1,8.57,5.9l-.153.088a1.855,1.855,0,0,1-1.853,0L5.49,5.368a1,1,0,0,0-1.366.366L2.636,8.312A1,1,0,0,0,3,9.678l1,.579A1.994,1.994,0,0,1,5,11.99v.021A1.991,1.991,0,0,1,4,13.743ZM12,9a3,3,0,1,1-3,3A3,3,0,0,1,12,9Z" />
+                            <TextBlock Text="Settings" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
 
-            <DockPanel Grid.Row="2" Margin="0,12,0,0">
-                <ProgressBar DockPanel.Dock="Right"
-                             x:Name="BusyProgress"
-                             Width="180"
-                             Height="16"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed" />
-                <TextBlock x:Name="StatusText" Text="Ready" Foreground="{DynamicResource MutedForegroundBrush}" />
-            </DockPanel>
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,12">
+                    <TextBlock x:Name="PageTitleText" Text="SSMS Extension Manager" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock x:Name="PageSubtitleText"
+                               Text="Third-party SSMS extensions are not officially supported by Microsoft. Install only extensions you trust."
+                               Foreground="{DynamicResource WarningForegroundBrush}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <Grid Grid.Row="1">
+                    <Grid x:Name="ManageView">
+                        <DataGrid x:Name="ExtensionsGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Extended"
+                                  SelectionChanged="ExtensionsGrid_SelectionChanged"
+                                  PreviewMouseLeftButtonDown="ExtensionsGrid_PreviewMouseLeftButtonDown"
+                                  PreviewMouseRightButtonDown="ExtensionsGrid_PreviewMouseRightButtonDown"
+                                  PreviewMouseRightButtonUp="ExtensionsGrid_PreviewMouseRightButtonUp"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  FontSize="13.5">
+                            <DataGrid.Resources>
+                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                    <Setter Property="FontSize" Value="13.5" />
+                                </Style>
+                            </DataGrid.Resources>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                                            <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                            <Setter Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
+                                        </DataTrigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                            <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Extension" Width="1.5*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <TextBlock x:Name="ExtensionNameText"
+                                                           Text="{Binding DisplayName}" />
+                                                <TextBlock x:Name="ExtensionNameLink"
+                                                           Visibility="Collapsed">
+                                                    <Hyperlink Click="ExtensionLink_Click">
+                                                        <Run Text="{Binding DisplayName, Mode=OneWay}" />
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding GitHubUri}" Value="{x:Null}">
+                                                    <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Visible" />
+                                                    <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding HasGitHubUri}" Value="True">
+                                                    <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Collapsed" />
+                                                    <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="118" />
+                                <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}" Width="1*" />
+                                <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="72" />
+                                <DataGridTextColumn Header="Latest" Binding="{Binding LatestVersion}" Width="72" />
+                                <DataGridTextColumn Header="Update Source" Binding="{Binding UpdateSourceText}" Width="3.3*" />
+                                <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="78" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+
+                    <Grid x:Name="BrowseView" Visibility="Collapsed">
+                        <TextBlock Text="Coming soon"
+                                   FontSize="26"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource MutedForegroundBrush}" />
+                    </Grid>
+
+                    <Grid x:Name="SettingsView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0"
+                              HorizontalAlignment="Left"
+                              Width="320">
+                            <Button x:Name="InstanceDropDownButton"
+                                    Padding="8,5"
+                                    HorizontalContentAlignment="Stretch"
+                                    Click="InstanceDropDown_Click">
+                                <DockPanel LastChildFill="True">
+                                    <Path DockPanel.Dock="Right"
+                                          Width="10"
+                                          Height="6"
+                                          Margin="10,0,0,0"
+                                          VerticalAlignment="Center"
+                                          Stroke="{DynamicResource MutedForegroundBrush}"
+                                          StrokeThickness="1.5"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Data="M 0 1.5 L 5 4.5 L 10 1.5" />
+                                    <TextBlock x:Name="InstanceDropDownText"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                            </Button>
+                            <Popup x:Name="InstanceDropDownPopup"
+                                   AllowsTransparency="True"
+                                   Placement="Bottom"
+                                   PlacementTarget="{Binding ElementName=InstanceDropDownButton}"
+                                   PopupAnimation="Fade"
+                                   StaysOpen="True">
+                                <Border Background="{DynamicResource PanelBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        MinWidth="{Binding ActualWidth, ElementName=InstanceDropDownButton}"
+                                        MaxHeight="220"
+                                        Padding="3">
+                                    <ListBox x:Name="InstanceListBox"
+                                             Background="{DynamicResource PanelBackgroundBrush}"
+                                             BorderThickness="0"
+                                             DisplayMemberPath="Display"
+                                             Foreground="{DynamicResource ControlForegroundBrush}"
+                                             SelectionChanged="InstanceListBox_SelectionChanged">
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="{x:Type ListBoxItem}">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                                <Setter Property="Padding" Value="8,5" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                            <Border x:Name="Chrome"
+                                                                    Background="{TemplateBinding Background}"
+                                                                    CornerRadius="3"
+                                                                    Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+                                </Border>
+                            </Popup>
+                        </Grid>
+
+                        <CheckBox Grid.Row="1"
+                                  x:Name="ShowMicrosoftExtensionsCheckBox"
+                                  Content="_Show extensions published by Microsoft"
+                                  Margin="0,14,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
+
+                        <CheckBox Grid.Row="2"
+                                  x:Name="DarkThemeCheckBox"
+                                  Content="_Dark theme"
+                                  Margin="0,14,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
+
+                        <CheckBox Grid.Row="3"
+                                  x:Name="CheckForAppUpdatesCheckBox"
+                                  Content="Check for application _updates on startup"
+                                  Margin="0,14,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
+                    </Grid>
+                </Grid>
+
+                <Popup Grid.Row="1"
+                       x:Name="RowActionsPopup"
+                       AllowsTransparency="True"
+                       Placement="RelativePoint"
+                       PlacementTarget="{Binding ElementName=ExtensionsGrid}"
+                       PopupAnimation="Fade"
+                       StaysOpen="True">
+                    <Border Background="{DynamicResource PanelBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            MinWidth="160"
+                            Padding="3"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="10"
+                                              Direction="270"
+                                              Opacity="0.18"
+                                              ShadowDepth="2"
+                                              Color="#000000" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <Button x:Name="RowUpdateButton"
+                                    Content="Update"
+                                    Tag="Update"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="UpdateSelected_Click" />
+                            <Button x:Name="RowReinstallButton"
+                                    Content="Reinstall"
+                                    Tag="Reinstall"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="Reinstall_Click" />
+                            <Button x:Name="RowSetSourceButton"
+                                    Content="Set Source"
+                                    Tag="SetSource"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="SetSource_Click" />
+                            <Button x:Name="RowUninstallButton"
+                                    Content="Uninstall"
+                                    Tag="Uninstall"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="Uninstall_Click" />
+                            <Border x:Name="RowRemoveSeparator"
+                                    Height="1"
+                                    Margin="6,3"
+                                    Background="{DynamicResource GridLineBrush}" />
+                            <Button x:Name="RowRemoveButton"
+                                    Content="Remove from List"
+                                    Tag="Remove"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="RemoveFromList_Click" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
+                <DockPanel Grid.Row="2" Margin="0,12,0,0">
+                    <ProgressBar DockPanel.Dock="Right"
+                                 x:Name="BusyProgress"
+                                 Width="180"
+                                 Height="16"
+                                 IsIndeterminate="True"
+                                 Visibility="Collapsed" />
+                    <TextBlock x:Name="StatusText" Text="Ready" Foreground="{DynamicResource MutedForegroundBrush}" />
+                </DockPanel>
+            </Grid>
         </Grid>
     </DockPanel>
 </Window>

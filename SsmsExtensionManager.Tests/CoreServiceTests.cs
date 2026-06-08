@@ -29,6 +29,15 @@ public sealed class CoreServiceTests
         Assert.Equal(expected, VersionComparer.IsNewer(candidate, installed));
     }
 
+    [Theory]
+    [InlineData("v2.2.2", "2.2.2")]
+    [InlineData("Release 10.4.1", "10.4.1")]
+    [InlineData("no version here", null)]
+    public void VersionComparer_ExtractVersionText_ReturnsNormalizedVersion(string input, string? expected)
+    {
+        Assert.Equal(expected, VersionComparer.ExtractVersionText(input));
+    }
+
     [Fact]
     public void VsixManifestReader_ReadsManifestFromVsix()
     {
@@ -91,7 +100,7 @@ public sealed class CoreServiceTests
         string tempRoot = CreateTempRoot();
         ManagedExtensionStore store = new(Path.Combine(tempRoot, "managed-extensions.json"));
         var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
-        var record = new ManagedExtensionRecord("SSMS22", manifest, null, "cached.vsix", false, DateTimeOffset.UtcNow);
+        var record = new ManagedExtensionRecord("SSMS22", manifest, null, "cached.vsix", false, DateTimeOffset.UtcNow, null);
 
         await store.UpsertAsync(record);
         IReadOnlyList<ManagedExtensionRecord> saved = await store.LoadAsync();
@@ -114,7 +123,8 @@ public sealed class CoreServiceTests
             "SSMS22.Test",
             true,
             true,
-            new WindowPlacementSettings(120, 240, 1180, 720, true));
+            new WindowPlacementSettings(120, 240, 1180, 720, true),
+            true);
 
         await store.SaveAsync(settings);
         AppSettings loaded = await store.LoadAsync();
@@ -148,6 +158,7 @@ public sealed class CoreServiceTests
         Assert.Equal("SSMS22.Test", loaded.SelectedSsmsInstanceId);
         Assert.True(loaded.ShowMicrosoftExtensions);
         Assert.False(loaded.DarkTheme);
+        Assert.True(loaded.CheckForApplicationUpdates);
         Assert.Null(loaded.WindowPlacement);
     }
 

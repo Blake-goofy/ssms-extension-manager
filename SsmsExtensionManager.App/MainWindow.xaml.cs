@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -17,6 +18,13 @@ namespace SsmsExtensionManager.App;
 
 public partial class MainWindow : Window
 {
+    private enum NavigationView
+    {
+        Manage,
+        Browse,
+        Settings
+    }
+
     private readonly SsmsInstanceDetector _instanceDetector = new();
     private readonly VsixManifestReader _manifestReader = new();
     private readonly UpdateSourceStore _sourceStore = new();
@@ -33,7 +41,11 @@ public partial class MainWindow : Window
     private readonly ExtensionInstaller _installer;
     private readonly GitHubReleaseUpdateChecker _updateChecker;
     private Point _pendingRowActionsPoint;
+    private AppUpdateCheckResult? _applicationUpdateResult;
     private InstanceRow? _selectedInstance;
+    private NavigationView _currentView = NavigationView.Manage;
+    private bool _isInitializingSettingsControls;
+    private bool _checkForApplicationUpdates = true;
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
     private string? _preferredInstanceId;
@@ -55,11 +67,21 @@ public partial class MainWindow : Window
         AppSettings settings = await _settingsStore.LoadAsync();
         _showMicrosoftExtensions = settings.ShowMicrosoftExtensions;
         _darkTheme = settings.DarkTheme;
+        _checkForApplicationUpdates = settings.CheckForApplicationUpdates;
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
         ThemeManager.Apply(_darkTheme);
+        _isInitializingSettingsControls = true;
+        ShowMicrosoftExtensionsCheckBox.IsChecked = _showMicrosoftExtensions;
+        DarkThemeCheckBox.IsChecked = _darkTheme;
+        CheckForAppUpdatesCheckBox.IsChecked = _checkForApplicationUpdates;
+        _isInitializingSettingsControls = false;
         ApplyWindowPlacement(settings.WindowPlacement);
         await RefreshAsync();
-        await CheckForApplicationUpdatesAsync(reportNoUpdate: false);
+        ApplyNavigation();
+        if (_checkForApplicationUpdates)
+        {
+            await RefreshApplicationUpdateStateAsync(interactive: false, promptToApply: false);
+        }
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
@@ -67,6 +89,7 @@ public partial class MainWindow : Window
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         CloseRowActionsPopup();
+        CloseInstanceDropDownIfNeeded(e);
     }
 
     private async void InstallLocal_Click(object sender, RoutedEventArgs e)
@@ -92,11 +115,11 @@ public partial class MainWindow : Window
         {
             ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
             string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix));
-            if (result.Success)
-            {
-                await SaveRecordAsync(instance.Instance, asset.Manifest, null, cachedVsix, isInstalled: true);
-            }
+                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix));
+                if (result.Success)
+                {
+                    await SaveRecordAsync(instance.Instance, asset.Manifest, null, cachedVsix, isInstalled: true, installedVersionOverride: null);
+                }
             else
             {
                 ShowMessage(result.Message);
@@ -156,7 +179,8 @@ public partial class MainWindow : Window
                 if (result.Success)
                 {
                     ExtensionAsset asset = _assetResolver.Resolve(packagePath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
-                    await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, packagePath, isInstalled: true);
+                    string? installedVersionOverride = row.AvailableUpdate?.Version ?? row.LatestRelease?.Version;
+                    await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, packagePath, isInstalled: true, installedVersionOverride: installedVersionOverride);
                 }
                 else
                 {
@@ -189,7 +213,7 @@ public partial class MainWindow : Window
 
         UpdateSource source = new(dialog.SelectedSourceType, dialog.SourceUri);
         await _sourceStore.SetAsync(row.Manifest.Id, source);
-        await SaveRecordAsync(row.Instance, row.Manifest, source, row.CachedVsixPath, row.IsInstalled);
+        await SaveRecordAsync(row.Instance, row.Manifest, source, row.CachedVsixPath, row.IsInstalled, row.InstalledVersionOverride);
         await LoadExtensionsAsync(checkUpdates: true);
     }
 
@@ -219,7 +243,7 @@ public partial class MainWindow : Window
             OperationResult result = await Task.Run(() => _installer.Uninstall(row.InstalledExtension));
             if (result.Success)
             {
-                await SaveRecordAsync(row.Instance, row.Manifest, row.UpdateSource, row.CachedVsixPath, isInstalled: false);
+                await SaveRecordAsync(row.Instance, row.Manifest, row.UpdateSource, row.CachedVsixPath, isInstalled: false, installedVersionOverride: null);
             }
             else
             {
@@ -262,44 +286,19 @@ public partial class MainWindow : Window
         await LoadExtensionsAsync(checkUpdates: true);
     }
 
-    private async void Settings_Click(object sender, RoutedEventArgs e)
+    private void Settings_Click(object sender, RoutedEventArgs e)
     {
-        SettingsDialog dialog = new(_instances, _selectedInstance, _showMicrosoftExtensions, _darkTheme)
-        {
-            Owner = this
-        };
-
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        bool instanceChanged = !ReferenceEquals(_selectedInstance, dialog.SelectedInstance);
-        bool darkThemeChanged = _darkTheme != dialog.DarkTheme;
-        _selectedInstance = dialog.SelectedInstance;
-        _showMicrosoftExtensions = dialog.ShowMicrosoftExtensions;
-        _darkTheme = dialog.DarkTheme;
-        _preferredInstanceId = _selectedInstance?.Instance.Id;
-        await SaveSettingsAsync();
-
-        if (darkThemeChanged)
-        {
-            ThemeManager.Apply(_darkTheme);
-        }
-
-        if (instanceChanged)
-        {
-            await LoadExtensionsAsync(checkUpdates: true);
-        }
-        else
-        {
-            ApplyExtensionFilter();
-        }
+        SetCurrentView(NavigationView.Settings);
     }
 
     private async void CheckApplicationUpdates_Click(object sender, RoutedEventArgs e)
     {
-        await CheckForApplicationUpdatesAsync(reportNoUpdate: true);
+        await RefreshApplicationUpdateStateAsync(interactive: true, promptToApply: true);
+    }
+
+    private async void UpdateAppButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshApplicationUpdateStateAsync(interactive: true, promptToApply: true);
     }
 
     private void Help_Click(object sender, RoutedEventArgs e)
@@ -312,11 +311,14 @@ public partial class MainWindow : Window
             MessageBoxImage.Information);
     }
 
-    private async Task CheckForApplicationUpdatesAsync(bool reportNoUpdate)
+    private async Task RefreshApplicationUpdateStateAsync(bool interactive, bool promptToApply)
     {
         if (!_appUpdateService.IsConfigured)
         {
-            if (reportNoUpdate)
+            _applicationUpdateResult = new AppUpdateCheckResult(AppUpdateCheckStatus.NotConfigured, null);
+            UpdateApplicationUpdateButton();
+
+            if (interactive)
             {
                 ShowMessage("Application updates are not configured for this build.");
             }
@@ -326,7 +328,7 @@ public partial class MainWindow : Window
 
         AppUpdateCheckResult? result = null;
 
-        if (reportNoUpdate)
+        if (interactive)
         {
             await RunBusyAsync("Checking for application updates...", async () =>
             {
@@ -350,9 +352,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        _applicationUpdateResult = result;
+        UpdateApplicationUpdateButton();
+
         if (result.Status == AppUpdateCheckStatus.NotInstalled)
         {
-            if (reportNoUpdate)
+            if (interactive)
             {
                 ShowMessage("Application updates are only available when SSMS Extension Manager is installed from the Velopack setup package.");
             }
@@ -362,7 +367,7 @@ public partial class MainWindow : Window
 
         if (result.Status == AppUpdateCheckStatus.NoUpdateAvailable)
         {
-            if (reportNoUpdate)
+            if (interactive)
             {
                 ShowMessage("SSMS Extension Manager is up to date.");
             }
@@ -371,6 +376,11 @@ public partial class MainWindow : Window
         }
 
         if (result.Update is not { } update)
+        {
+            return;
+        }
+
+        if (!promptToApply)
         {
             return;
         }
@@ -469,6 +479,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (FindParent<DataGridColumnHeader>(source) is not null)
+        {
+            return;
+        }
+
         DataGridRow? row = FindParent<DataGridRow>(source);
         if (row is null)
         {
@@ -488,6 +503,11 @@ public partial class MainWindow : Window
     private void ExtensionsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        if (FindParent<DataGridColumnHeader>(source) is not null)
         {
             return;
         }
@@ -541,6 +561,10 @@ public partial class MainWindow : Window
             _selectedInstance = _instances.FirstOrDefault(instance => string.Equals(instance.Instance.Id, selectedInstanceId, StringComparison.OrdinalIgnoreCase))
                 ?? _instances.FirstOrDefault();
             _preferredInstanceId = _selectedInstance?.Instance.Id;
+            InstanceListBox.ItemsSource = _instances;
+            InstanceListBox.SelectedItem = _selectedInstance;
+            InstanceDropDownButton.IsEnabled = _instances.Count > 0;
+            UpdateInstanceDropDownText();
 
             if (_selectedInstance is null)
             {
@@ -578,27 +602,51 @@ public partial class MainWindow : Window
             foreach (InstalledExtension extension in scanned)
             {
                 recordsById.TryGetValue(extension.Manifest.Id, out ManagedExtensionRecord? record);
-                UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource;
-                InstalledExtension current = extension with { UpdateSource = source };
+                UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource ?? InferUpdateSource(extension.Manifest);
+                InstalledExtension current = extension with
+                {
+                    UpdateSource = source,
+                    InstalledVersionOverride = record?.InstalledVersionOverride
+                };
                 AvailableUpdate? latest = checkUpdates && source is { Type: UpdateSourceType.GitHubRelease }
                     ? await _updateChecker.FindLatestMatchingAssetAsync(extension.Manifest, source)
                     : null;
-                AvailableUpdate? update = latest is not null && VersionComparer.IsNewer(latest.Version, extension.Manifest.Version)
+                string? installedVersionOverride = current.InstalledVersionOverride
+                    ?? InferInstalledVersionOverride(record, latest, current.Manifest.Version);
+                if (installedVersionOverride is not null && !string.Equals(installedVersionOverride, current.InstalledVersionOverride, StringComparison.OrdinalIgnoreCase))
+                {
+                    current = current with { InstalledVersionOverride = installedVersionOverride };
+                }
+
+                AvailableUpdate? update = latest is not null && VersionComparer.IsNewer(latest.Version, current.CurrentVersion)
                     ? latest
                     : null;
 
                 rows.Add(new ExtensionRow(instance.Instance, current with { AvailableUpdate = update }, record, update, latest));
                 installedIds.Add(extension.Manifest.Id);
-                await SaveRecordAsync(instance.Instance, extension.Manifest, source, record?.CachedVsixPath, isInstalled: true);
+                if (source is not null && extension.UpdateSource is null && record?.UpdateSource is null)
+                {
+                    await _sourceStore.SetAsync(extension.Manifest.Id, source);
+                }
+                await SaveRecordAsync(instance.Instance, extension.Manifest, source, record?.CachedVsixPath, isInstalled: true, current.InstalledVersionOverride);
             }
 
             foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
             {
-                AvailableUpdate? latest = checkUpdates && record.UpdateSource is { Type: UpdateSourceType.GitHubRelease }
-                    ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, record.UpdateSource)
+                UpdateSource? source = record.UpdateSource ?? InferUpdateSource(record.Manifest);
+                AvailableUpdate? latest = checkUpdates && source is { Type: UpdateSourceType.GitHubRelease }
+                    ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, source)
                     : null;
 
-                rows.Add(new ExtensionRow(instance.Instance, null, record, latest, latest));
+                ManagedExtensionRecord effectiveRecord = source == record.UpdateSource
+                    ? record
+                    : record with { UpdateSource = source };
+                rows.Add(new ExtensionRow(instance.Instance, null, effectiveRecord, latest, latest));
+                if (source is not null && record.UpdateSource is null)
+                {
+                    await _sourceStore.SetAsync(record.Manifest.Id, source);
+                    await SaveRecordAsync(record.Manifest, instance.Instance, source, record.CachedVsixPath, isInstalled: false, record.InstalledVersionOverride);
+                }
             }
 
             _allExtensions.Clear();
@@ -624,8 +672,8 @@ public partial class MainWindow : Window
         int hiddenCount = _allExtensions.Count - visibleRows.Count;
         string instanceText = _selectedInstance is null ? "No SSMS instance selected" : _selectedInstance.Display;
         StatusText.Text = hiddenCount == 0
-            ? $"{instanceText}. {_extensions.Count} extension(s) shown."
-            : $"{instanceText}. {_extensions.Count} extension(s) shown. {hiddenCount} Microsoft extension(s) hidden.";
+            ? $"{instanceText}. {FormatCount(_extensions.Count, "Extension")} shown."
+            : $"{instanceText}. {FormatCount(_extensions.Count, "Extension")} shown. {FormatCount(hiddenCount, "Microsoft extension")} hidden.";
         UpdateSelectionActionState();
     }
 
@@ -671,7 +719,7 @@ public partial class MainWindow : Window
                     if (result.Success)
                     {
                         updatedCount++;
-                        await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, cachedVsix, isInstalled: true);
+                        await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, cachedVsix, isInstalled: true, update.Version);
                     }
                     else
                     {
@@ -729,7 +777,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveRecordAsync(SsmsInstance instance, VsixManifest manifest, UpdateSource? source, string? cachedVsixPath, bool isInstalled)
+    private async Task SaveRecordAsync(SsmsInstance instance, VsixManifest manifest, UpdateSource? source, string? cachedVsixPath, bool isInstalled, string? installedVersionOverride)
+        => await SaveRecordAsync(manifest, instance, source, cachedVsixPath, isInstalled, installedVersionOverride);
+
+    private async Task SaveRecordAsync(VsixManifest manifest, SsmsInstance instance, UpdateSource? source, string? cachedVsixPath, bool isInstalled, string? installedVersionOverride)
     {
         await _managedStore.UpsertAsync(new ManagedExtensionRecord(
             instance.Id,
@@ -737,7 +788,41 @@ public partial class MainWindow : Window
             source,
             cachedVsixPath,
             isInstalled,
-            DateTimeOffset.UtcNow));
+            DateTimeOffset.UtcNow,
+            installedVersionOverride));
+    }
+
+    private static UpdateSource? InferUpdateSource(VsixManifest manifest)
+    {
+        if (!GitHubRepository.TryParse(manifest.MoreInfo ?? string.Empty, out GitHubRepository repository))
+        {
+            return null;
+        }
+
+        return new UpdateSource(UpdateSourceType.GitHubRelease, repository.ToString());
+    }
+
+    private static string? InferInstalledVersionOverride(ManagedExtensionRecord? record, AvailableUpdate? latest, string manifestVersion)
+    {
+        if (record?.InstalledVersionOverride is not null)
+        {
+            return record.InstalledVersionOverride;
+        }
+
+        if (record is not { IsInstalled: true, CachedVsixPath: { } cachedPath } || latest is null || !File.Exists(cachedPath))
+        {
+            return null;
+        }
+
+        if (!VersionComparer.IsNewer(latest.Version, manifestVersion))
+        {
+            return null;
+        }
+
+        DateTimeOffset cachedTimestamp = File.GetLastWriteTimeUtc(cachedPath);
+        return cachedTimestamp >= latest.PublishedAt.UtcDateTime.AddMinutes(-1)
+            ? latest.Version
+            : null;
     }
 
     private async Task<string> DownloadAsync(Uri uri)
@@ -817,11 +902,164 @@ public partial class MainWindow : Window
         await _settingsStore.SaveAsync(BuildCurrentSettings());
     }
 
+    private void ManageNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Manage);
+
+    private void BrowseNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Browse);
+
+    private void SettingsNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Settings);
+
+    private void SetCurrentView(NavigationView view)
+    {
+        _currentView = view;
+        ApplyNavigation();
+    }
+
+    private void ApplyNavigation()
+    {
+        if (ManageView is null)
+        {
+            return;
+        }
+
+        ManageView.Visibility = _currentView == NavigationView.Manage ? Visibility.Visible : Visibility.Collapsed;
+        BrowseView.Visibility = _currentView == NavigationView.Browse ? Visibility.Visible : Visibility.Collapsed;
+        SettingsView.Visibility = _currentView == NavigationView.Settings ? Visibility.Visible : Visibility.Collapsed;
+
+        PageTitleText.Text = _currentView switch
+        {
+            NavigationView.Manage => "Manage",
+            NavigationView.Browse => "Browse",
+            NavigationView.Settings => "Settings",
+            _ => "SSMS Extension Manager"
+        };
+
+        PageSubtitleText.Text = _currentView switch
+        {
+            NavigationView.Manage => "Right-click extensions in the table below to take actions such as update or uninstall.",
+            NavigationView.Browse => "Third-party SSMS extensions are not officially supported by Microsoft. Install only extensions you trust.",
+            NavigationView.Settings => "Choose the SSMS instance and application behavior here.",
+            _ => string.Empty
+        };
+
+        PageSubtitleText.Visibility = string.IsNullOrEmpty(PageSubtitleText.Text) ? Visibility.Collapsed : Visibility.Visible;
+        ManageNavButton.Tag = _currentView == NavigationView.Manage ? "Active" : null;
+        BrowseNavButton.Tag = _currentView == NavigationView.Browse ? "Active" : null;
+        SettingsNavButton.Tag = _currentView == NavigationView.Settings ? "Active" : null;
+    }
+
+    private void InstanceDropDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (!InstanceDropDownButton.IsEnabled)
+        {
+            return;
+        }
+
+        InstanceDropDownPopup.IsOpen = !InstanceDropDownPopup.IsOpen;
+    }
+
+    private async void InstanceListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateInstanceDropDownText();
+
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        InstanceDropDownPopup.IsOpen = false;
+        if (InstanceListBox.SelectedItem is not InstanceRow selected || ReferenceEquals(_selectedInstance, selected))
+        {
+            return;
+        }
+
+        _selectedInstance = selected;
+        _preferredInstanceId = selected.Instance.Id;
+        await SaveSettingsAsync();
+        await LoadExtensionsAsync(checkUpdates: true);
+    }
+
+    private void UpdateInstanceDropDownText()
+    {
+        InstanceDropDownText.Text = _selectedInstance?.Display ?? "No SSMS 22 instance detected";
+    }
+
+    private async void SettingsControl_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || _isInitializingSettingsControls)
+        {
+            return;
+        }
+
+        bool previousShowMicrosoftExtensions = _showMicrosoftExtensions;
+        bool previousDarkTheme = _darkTheme;
+        bool previousCheckForApplicationUpdates = _checkForApplicationUpdates;
+        _showMicrosoftExtensions = ShowMicrosoftExtensionsCheckBox.IsChecked == true;
+        _darkTheme = DarkThemeCheckBox.IsChecked == true;
+        _checkForApplicationUpdates = CheckForAppUpdatesCheckBox.IsChecked == true;
+
+        if (previousDarkTheme != _darkTheme)
+        {
+            ThemeManager.Apply(_darkTheme);
+        }
+
+        if (previousShowMicrosoftExtensions != _showMicrosoftExtensions)
+        {
+            ApplyExtensionFilter();
+        }
+
+        if (previousCheckForApplicationUpdates && !_checkForApplicationUpdates)
+        {
+            _applicationUpdateResult = null;
+            UpdateApplicationUpdateButton();
+        }
+
+        await SaveSettingsAsync();
+
+        if (!previousCheckForApplicationUpdates && _checkForApplicationUpdates)
+        {
+            await RefreshApplicationUpdateStateAsync(interactive: false, promptToApply: false);
+        }
+    }
+
+    private void UpdateApplicationUpdateButton()
+    {
+        if (UpdateAppButton is null)
+        {
+            return;
+        }
+
+        bool showButton = _checkForApplicationUpdates
+            && _applicationUpdateResult?.Status is AppUpdateCheckStatus.UpdateAvailable or AppUpdateCheckStatus.UpdatePendingRestart;
+        UpdateAppButton.Visibility = showButton ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CloseInstanceDropDownIfNeeded(MouseButtonEventArgs e)
+    {
+        if (!InstanceDropDownPopup.IsOpen)
+        {
+            return;
+        }
+
+        if (InstanceDropDownButton.IsMouseOver || InstanceListBox.IsMouseOver)
+        {
+            return;
+        }
+
+        InstanceDropDownPopup.IsOpen = false;
+    }
+
+    private static string FormatCount(int count, string singular)
+    {
+        string label = count == 1 ? singular : $"{singular}s";
+        return $"{count} {label}";
+    }
+
     private AppSettings BuildCurrentSettings() => new(
         _preferredInstanceId,
-        _showMicrosoftExtensions,
-        _darkTheme,
-        CaptureWindowPlacement());
+        ShowMicrosoftExtensionsCheckBox?.IsChecked ?? _showMicrosoftExtensions,
+        DarkThemeCheckBox?.IsChecked ?? _darkTheme,
+        CaptureWindowPlacement(),
+        CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates);
 
     private WindowPlacementSettings CaptureWindowPlacement()
     {
@@ -902,13 +1140,11 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public string Publisher => Manifest.Publisher;
 
-    public string InstalledVersion => IsInstalled ? Manifest.Version : "";
+    public string InstalledVersion => IsInstalled ? (InstalledExtension!.CurrentVersion) : "";
 
     public string LatestVersion => LatestRelease?.Version ?? "";
 
-    public string UpdateSourceText => UpdateSource is null
-        ? "Unknown"
-        : $"{UpdateSource.Type}: {UpdateSource.Uri}";
+    public string UpdateSourceText => UpdateSource?.Uri ?? "Unknown";
 
     public string Scope => IsInstalled
         ? InstalledExtension!.IsPerUser ? "Per-user" : "Machine"
@@ -928,6 +1164,8 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
     public string? MoreInfo => Manifest.MoreInfo;
 
     public UpdateSource? UpdateSource => InstalledExtension?.UpdateSource ?? Record?.UpdateSource;
+
+    public string? InstalledVersionOverride => InstalledExtension?.InstalledVersionOverride ?? Record?.InstalledVersionOverride;
 
     public Uri? GitHubUri
     {

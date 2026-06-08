@@ -6,4 +6,5 @@ public sealed record ManagedExtensionRecord(
     UpdateSource? UpdateSource,
     string? CachedVsixPath,
     bool IsInstalled,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset LastSeenAt,
+    string? InstalledVersionOverride = null);

@@ -5,7 +5,8 @@
         Height="210"
         Width="560"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded">
     <Border Background="{DynamicResource AppBackgroundBrush}"
             Padding="18"
             TextElement.Foreground="{DynamicResource ControlForegroundBrush}">
@@ -22,13 +23,24 @@
                        Text="Enter owner/repo or a GitHub repository URL."
                        Foreground="{DynamicResource MutedForegroundBrush}"
                        Margin="0,8,0,6" />
-            <TextBox Grid.Row="2"
-                     x:Name="SourceUriTextBox"
-                     VerticalAlignment="Top"
-                     Height="30" />
+            <Grid Grid.Row="2"
+                  VerticalAlignment="Top"
+                  Height="30">
+                <TextBox x:Name="SourceUriTextBox"
+                         VerticalContentAlignment="Center"
+                         Padding="6,0"
+                         TextChanged="SourceUriTextBox_TextChanged" />
+                <TextBlock x:Name="SourcePlaceholderText"
+                           Text="owner/repo"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource MutedForegroundBrush}"
+                           IsHitTestVisible="False"
+                           Visibility="Collapsed" />
+            </Grid>
             <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Cancel" Padding="12,6" Margin="0,0,8,0" Click="Cancel_Click" />
-                <Button Content="Save" Padding="12,6" Click="Save_Click" />
+                <Button Content="Cancel" Padding="12,6" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True" />
+                <Button Content="Save" Padding="12,6" Click="Save_Click" IsDefault="True" />
             </StackPanel>
         </Grid>
     </Border>

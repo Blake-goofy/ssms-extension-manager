@@ -14,10 +14,21 @@ public static partial class VersionComparer
         return string.Compare(candidate, installed, StringComparison.OrdinalIgnoreCase) > 0;
     }
 
+    public static string? ExtractVersionText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string normalized = VersionTextPattern().Match(value).Value;
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
     private static bool TryNormalize(string value, out Version? version)
     {
         version = null;
-        string normalized = VersionTextPattern().Match(value).Value;
+        string normalized = ExtractVersionText(value) ?? string.Empty;
         return !string.IsNullOrWhiteSpace(normalized) && Version.TryParse(normalized, out version);
     }
 

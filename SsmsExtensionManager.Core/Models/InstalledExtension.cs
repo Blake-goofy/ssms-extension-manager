@@ -6,4 +6,8 @@ public sealed record InstalledExtension(
     string InstallPath,
     bool IsPerUser,
     UpdateSource? UpdateSource,
-    AvailableUpdate? AvailableUpdate);
+    AvailableUpdate? AvailableUpdate,
+    string? InstalledVersionOverride = null)
+{
+    public string CurrentVersion => InstalledVersionOverride ?? Manifest.Version;
+}

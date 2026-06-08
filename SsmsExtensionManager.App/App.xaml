@@ -25,6 +25,7 @@
 
         <Style TargetType="{x:Type Window}">
             <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+            <Setter Property="Icon" Value="Assets/ssms-extension-manager.ico" />
         </Style>
 
         <Style TargetType="{x:Type Label}">

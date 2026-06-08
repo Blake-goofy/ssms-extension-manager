@@ -57,8 +57,12 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
                     continue;
                 }
 
+                string resolvedVersion = VersionComparer.ExtractVersionText(release.TagName)
+                    ?? VersionComparer.ExtractVersionText(release.Name ?? string.Empty)
+                    ?? resolved.Manifest.Version;
+
                 return new AvailableUpdate(
-                    resolved.Manifest.Version,
+                    resolvedVersion,
                     asset.BrowserDownloadUrl,
                     string.IsNullOrWhiteSpace(release.Name) ? release.TagName : release.Name,
                     release.PublishedAt);

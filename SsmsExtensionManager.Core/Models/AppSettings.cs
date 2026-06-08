@@ -4,9 +4,10 @@ public sealed record AppSettings(
     string? SelectedSsmsInstanceId,
     bool ShowMicrosoftExtensions,
     bool DarkTheme,
-    WindowPlacementSettings? WindowPlacement)
+    WindowPlacementSettings? WindowPlacement,
+    bool CheckForApplicationUpdates = true)
 {
-    public static AppSettings Default { get; } = new(null, false, false, null);
+    public static AppSettings Default { get; } = new(null, false, false, null, true);
 }
 
 public sealed record WindowPlacementSettings(
