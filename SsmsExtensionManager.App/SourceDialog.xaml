@@ -18,9 +18,9 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock Text="GitHub release source" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="VSIX or ZIP source" FontSize="16" FontWeight="SemiBold" />
             <TextBlock Grid.Row="1"
-                       Text="Enter owner/repo or a GitHub repository URL."
+                       Text="Enter owner/repo, a GitHub repository URL, or a direct .vsix/.zip URL."
                        Foreground="{DynamicResource MutedForegroundBrush}"
                        Margin="0,8,0,6" />
             <Grid Grid.Row="2"
@@ -31,7 +31,7 @@
                          Padding="6,0"
                          TextChanged="SourceUriTextBox_TextChanged" />
                 <TextBlock x:Name="SourcePlaceholderText"
-                           Text="owner/repo"
+                           Text="owner/repo or https://example.com/extension.vsix"
                            Margin="8,0,0,0"
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource MutedForegroundBrush}"

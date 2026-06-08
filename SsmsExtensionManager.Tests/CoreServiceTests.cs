@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Net;
+using System.Net.Http;
 using SsmsExtensionManager.Core.Models;
 using SsmsExtensionManager.Core.Services;
 
@@ -95,6 +97,75 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public void GalleryFeedReader_ReadsAtomEntries()
+    {
+        using MemoryStream stream = new("""
+            <?xml version="1.0" encoding="utf-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <id>SSMS_EnvTabs</id>
+                <title type="text">SSMS EnvTabs</title>
+                <link rel="alternate" href="https://ssmsgallery.azurewebsites.net/extension/SSMS_EnvTabs" />
+                <summary type="text">Auto-color and rename SSMS query tabs.</summary>
+                <published>2026-05-22T13:17:58Z</published>
+                <updated>2026-05-22T13:17:58Z</updated>
+                <author>
+                  <name>Blake Becker</name>
+                </author>
+                <content type="application/octet-stream" src="https://ssmsgallery.azurewebsites.net/extensions/SSMS_EnvTabs/extension.vsix" />
+                <link rel="icon" href="https://ssmsgallery.azurewebsites.net/extensions/SSMS_EnvTabs/icon-2.2.0.webp" />
+                <Vsix xmlns="http://schemas.microsoft.com/developer/vsx-syndication-schema/2010">
+                  <Id>SSMS_EnvTabs</Id>
+                  <Version>2.2.0</Version>
+                </Vsix>
+              </entry>
+            </feed>
+            """u8.ToArray());
+
+        GalleryFeedReader reader = new();
+        IReadOnlyList<GalleryExtension> extensions = reader.Read(stream);
+
+        GalleryExtension extension = Assert.Single(extensions);
+        Assert.Equal("SSMS_EnvTabs", extension.Id);
+        Assert.Equal("SSMS EnvTabs", extension.DisplayName);
+        Assert.Equal("Auto-color and rename SSMS query tabs.", extension.Summary);
+        Assert.Equal("Blake Becker", extension.Author);
+        Assert.Equal("2.2.0", extension.Version);
+        Assert.Equal("https://ssmsgallery.azurewebsites.net/extensions/SSMS_EnvTabs/extension.vsix", extension.PackageUri.ToString());
+        Assert.Equal("https://ssmsgallery.azurewebsites.net/extensions/SSMS_EnvTabs/icon-2.2.0.webp", extension.IconUri?.ToString());
+    }
+
+    [Fact]
+    public async Task GitHubReleaseUpdateChecker_ReadsLatestVersionFromDirectVsixUrl()
+    {
+        string tempRoot = CreateTempRoot();
+        string vsixPath = Path.Combine(tempRoot, "sample.vsix");
+        CreateVsix(vsixPath, "Sample.Extension", "4.2.0", "Sample Publisher", "Sample Extension");
+        byte[] bytes = await File.ReadAllBytesAsync(vsixPath);
+
+        HttpClient httpClient = new(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes)
+            {
+                Headers =
+                {
+                    LastModified = DateTimeOffset.UtcNow
+                }
+            }
+        }));
+
+        GitHubReleaseUpdateChecker checker = new(httpClient, new ExtensionAssetResolver(new VsixManifestReader()));
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://example.com/extensions/sample.vsix");
+
+        AvailableUpdate? update = await checker.FindLatestMatchingAssetAsync(manifest, source);
+
+        Assert.NotNull(update);
+        Assert.Equal("4.2.0", update!.Version);
+        Assert.Equal("https://example.com/extensions/sample.vsix", update.AssetUri.ToString());
+    }
+
+    [Fact]
     public async Task ManagedExtensionStore_UpsertsAndRemovesRecords()
     {
         string tempRoot = CreateTempRoot();
@@ -162,6 +233,39 @@ public sealed class CoreServiceTests
         Assert.Null(loaded.WindowPlacement);
     }
 
+    [Fact]
+    public async Task AppSettingsStore_NormalizesWindowPlacementPrecision()
+    {
+        string tempRoot = CreateTempRoot();
+        string settingsPath = Path.Combine(tempRoot, "settings.json");
+        await File.WriteAllTextAsync(settingsPath, """
+            {
+              "SelectedSsmsInstanceId": "SSMS22.Test",
+              "ShowMicrosoftExtensions": true,
+              "DarkTheme": true,
+              "WindowPlacement": {
+                "Left": 10.123456789,
+                "Top": 20.987654321,
+                "Width": 1324.0000000001,
+                "Height": 742.4000000000001,
+                "IsMaximized": false
+              },
+              "CheckForApplicationUpdates": true
+            }
+            """);
+        AppSettingsStore store = new(settingsPath);
+
+        AppSettings loaded = await store.LoadAsync();
+        await store.SaveAsync(loaded);
+        AppSettings reloaded = await store.LoadAsync();
+
+        Assert.NotNull(reloaded.WindowPlacement);
+        Assert.Equal(10.12, reloaded.WindowPlacement!.Left);
+        Assert.Equal(20.99, reloaded.WindowPlacement.Top);
+        Assert.Equal(1324.00, reloaded.WindowPlacement.Width);
+        Assert.Equal(742.40, reloaded.WindowPlacement.Height);
+    }
+
     private static string CreateTempRoot()
     {
         string path = Path.Combine(Path.GetTempPath(), "SsmsExtensionManager.Tests", Guid.NewGuid().ToString("N"));
@@ -189,5 +293,11 @@ public sealed class CoreServiceTests
               </Installation>
             </PackageManifest>
             """);
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(handler(request));
     }
 }

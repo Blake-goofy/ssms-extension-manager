@@ -32,10 +32,13 @@ public partial class MainWindow : Window
     private readonly PackageCache _packageCache = new();
     private readonly AppSettingsStore _settingsStore = new();
     private readonly AppUpdateService _appUpdateService = new();
+    private readonly GalleryFeedReader _galleryFeedReader = new();
     private readonly HttpClient _httpClient = new();
     private readonly ObservableCollection<InstanceRow> _instances = [];
     private readonly ObservableCollection<ExtensionRow> _extensions = [];
+    private readonly ObservableCollection<GalleryExtensionRow> _galleryExtensions = [];
     private readonly List<ExtensionRow> _allExtensions = [];
+    private readonly List<GalleryExtensionRow> _allGalleryExtensions = [];
     private readonly InstalledExtensionScanner _scanner;
     private readonly ExtensionAssetResolver _assetResolver;
     private readonly ExtensionInstaller _installer;
@@ -50,6 +53,9 @@ public partial class MainWindow : Window
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
     private string? _preferredInstanceId;
+    private bool _galleryLoaded;
+
+    private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
 
     public MainWindow()
     {
@@ -59,6 +65,8 @@ public partial class MainWindow : Window
         _installer = new ExtensionInstaller(_assetResolver);
         _updateChecker = new GitHubReleaseUpdateChecker(_httpClient, _assetResolver);
         ExtensionsGrid.ItemsSource = _extensions;
+        GalleryListBox.ItemsSource = _galleryExtensions;
+        UpdateGallerySearchPlaceholderVisibility();
         UpdateSelectionActionState();
         Title = $"SSMS Extension Manager {AppBuildInfo.Version}";
     }
@@ -85,7 +93,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+    private async void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentView == NavigationView.Browse)
+        {
+            await LoadGalleryAsync(force: true);
+            return;
+        }
+
+        await RefreshAsync();
+    }
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -126,7 +143,7 @@ public partial class MainWindow : Window
                 ShowMessage(result.Message);
             }
 
-            await LoadExtensionsAsync(checkUpdates: true);
+            await LoadExtensionsAfterMutationAsync();
         });
     }
 
@@ -189,7 +206,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            await LoadExtensionsAsync(checkUpdates: true);
+            await LoadExtensionsAfterMutationAsync(selected.Select(row => row.Manifest.Id).ToArray());
         });
     }
 
@@ -215,7 +232,7 @@ public partial class MainWindow : Window
         UpdateSource source = new(dialog.SelectedSourceType, dialog.SourceUri);
         await _sourceStore.SetAsync(row.Manifest.Id, source);
         await SaveRecordAsync(row.Instance, row.Manifest, source, row.CachedVsixPath, row.IsInstalled, row.InstalledVersionOverride);
-        await LoadExtensionsAsync(checkUpdates: true);
+        await LoadExtensionsAfterMutationAsync([row.Manifest.Id]);
     }
 
     private async void Uninstall_Click(object sender, RoutedEventArgs e)
@@ -251,7 +268,7 @@ public partial class MainWindow : Window
                 ShowMessage(result.Message);
             }
 
-            await LoadExtensionsAsync(checkUpdates: true);
+            await LoadExtensionsAfterMutationAsync([row.Manifest.Id]);
         });
     }
 
@@ -284,7 +301,7 @@ public partial class MainWindow : Window
             await _sourceStore.RemoveAsync(row.Manifest.Id);
         }
 
-        await LoadExtensionsAsync(checkUpdates: true);
+        await LoadExtensionsAfterMutationAsync();
     }
 
     private void Settings_Click(object sender, RoutedEventArgs e)
@@ -306,7 +323,7 @@ public partial class MainWindow : Window
     {
         MessageBox.Show(
             this,
-            "Right-click an extension row to update it, reinstall it, uninstall it, set its update source, or remove an uninstalled extension from the list.\n\nThe app caches VSIX packages that it installs or updates so those extensions can be reinstalled later. Extensions installed outside this app can be shown after uninstall, but they need a configured source before reinstall is reliable.\n\nUse File > Install VSIX/ZIP to install a local VSIX or ZIP containing one VSIX. Use View > Refresh to rescan SSMS, View > Update All to apply available installed-extension updates, and View > Settings to choose the SSMS instance or show Microsoft-published extensions.",
+            "Right-click an extension row to update it, reinstall it, uninstall it, set its update source, or remove an uninstalled extension from the list.\n\nThe app caches VSIX packages that it installs or updates so those extensions can be reinstalled later. Extensions installed outside this app can be shown after uninstall, but they need a configured source before reinstall is reliable.\n\nUse File > Install VSIX/ZIP to install a local VSIX or ZIP containing one VSIX. Update sources can be a GitHub repository or a direct downloadable .vsix/.zip link. Use View > Refresh to rescan SSMS, View > Update All to apply available installed-extension updates, and View > Settings to choose the SSMS instance or show Microsoft-published extensions.",
             "SSMS Extension Manager Help",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -429,7 +446,7 @@ public partial class MainWindow : Window
 
     private void ExtensionLink_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Hyperlink { DataContext: ExtensionRow row } || row.GitHubUri is null)
+        if (sender is not Hyperlink { DataContext: ExtensionRow row } || row.OpenUri is null)
         {
             return;
         }
@@ -438,7 +455,7 @@ public partial class MainWindow : Window
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = row.GitHubUri.ToString(),
+                FileName = row.OpenUri.ToString(),
                 UseShellExecute = true
             });
         }
@@ -586,7 +603,173 @@ public partial class MainWindow : Window
         });
     }
 
-    private async Task LoadExtensionsAsync(bool checkUpdates = false)
+    private async Task LoadGalleryAsync(bool force)
+    {
+        if (_galleryLoaded && !force)
+        {
+            return;
+        }
+
+        await RunBusyAsync("Loading gallery...", async () =>
+        {
+            GalleryStatusText.Text = "Loading gallery...";
+            await using Stream stream = await _httpClient.GetStreamAsync(GalleryFeedUri);
+            IReadOnlyList<GalleryExtension> extensions = _galleryFeedReader.Read(stream);
+
+            string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id;
+            _allGalleryExtensions.Clear();
+            _allGalleryExtensions.AddRange(extensions.Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension.Id))));
+            _galleryLoaded = true;
+            ApplyGalleryFilter(selectedId);
+        }, disableWindow: false);
+    }
+
+    private void ApplyGalleryFilter(string? preferredSelectedId = null)
+    {
+        if (GallerySearchTextBox is null)
+        {
+            return;
+        }
+
+        string query = GallerySearchTextBox.Text.Trim();
+        List<GalleryExtensionRow> rows = _allGalleryExtensions
+            .Where(row => string.IsNullOrWhiteSpace(query)
+                || row.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.AuthorText.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Summary.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        _galleryExtensions.Clear();
+        foreach (GalleryExtensionRow row in rows)
+        {
+            _galleryExtensions.Add(row);
+        }
+
+        GalleryStatusText.Text = _galleryLoaded
+            ? $"{FormatCount(_galleryExtensions.Count, "Extension")} shown from SSMS Gallery."
+            : string.Empty;
+
+        GalleryExtensionRow? selected = !string.IsNullOrWhiteSpace(preferredSelectedId)
+            ? _galleryExtensions.FirstOrDefault(row => string.Equals(row.Id, preferredSelectedId, StringComparison.OrdinalIgnoreCase))
+            : GalleryListBox.SelectedItem as GalleryExtensionRow;
+
+        if (selected is not null && _galleryExtensions.Contains(selected))
+        {
+            GalleryListBox.SelectedItem = selected;
+        }
+        else if (GalleryListBox.SelectedItem is not null && !_galleryExtensions.Contains(GalleryListBox.SelectedItem))
+        {
+            GalleryListBox.SelectedItem = null;
+        }
+    }
+
+    private bool IsGalleryExtensionInstalled(string id)
+        => _allExtensions.Any(row => row.IsInstalled && string.Equals(row.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    private void RefreshGalleryInstallStates()
+    {
+        foreach (GalleryExtensionRow row in _allGalleryExtensions)
+        {
+            row.IsInstalled = IsGalleryExtensionInstalled(row.Id);
+        }
+
+        GalleryListBox.Items.Refresh();
+    }
+
+    private async Task InstallGalleryExtensionAsync(GalleryExtensionRow row)
+    {
+        if (_selectedInstance is not { } instance)
+        {
+            ShowMessage("No SSMS 22 instance is selected. Open View > Settings to choose an instance.");
+            return;
+        }
+
+        if (row.IsInstalled)
+        {
+            return;
+        }
+
+        MessageBoxResult confirm = MessageBox.Show(
+            this,
+            $"Install {row.DisplayName} from SSMS Gallery?",
+            "Install extension",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information);
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        await RunBusyAsync($"Installing {row.DisplayName}...", async () =>
+        {
+            string downloaded = await DownloadAsync(row.PackageUri);
+            string? installedManifestId = null;
+            try
+            {
+                ExtensionAsset asset = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
+                if (!string.Equals(asset.Manifest.Id, row.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowMessage($"Downloaded VSIX identity '{asset.Manifest.Id}' does not match gallery extension '{row.Id}'.");
+                    return;
+                }
+
+                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
+                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix));
+                if (!result.Success)
+                {
+                    ShowMessage(result.Message);
+                    return;
+                }
+
+                UpdateSource source = new(SourceTypeFromPackageUri(row.PackageUri), row.PackageUri.ToString());
+                await _sourceStore.SetAsync(asset.Manifest.Id, source);
+                await SaveRecordAsync(instance.Instance, asset.Manifest, source, cachedVsix, isInstalled: true, installedVersionOverride: EmptyToNull(row.Version));
+                installedManifestId = asset.Manifest.Id;
+                GalleryStatusText.Text = result.Message;
+            }
+            finally
+            {
+                TryDelete(downloaded);
+            }
+
+            await LoadExtensionsAfterMutationAsync(installedManifestId is null ? null : [installedManifestId]);
+            RefreshGalleryInstallStates();
+            ApplyGalleryFilter(row.Id);
+        });
+    }
+
+    private static UpdateSourceType SourceTypeFromPackageUri(Uri uri)
+    {
+        string extension = Path.GetExtension(uri.LocalPath);
+        return extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)
+            ? UpdateSourceType.DirectZipUrl
+            : UpdateSourceType.DirectVsixUrl;
+    }
+
+    private static bool IsDownloadableSource(UpdateSource? source)
+        => source?.Type is UpdateSourceType.GitHubRelease or UpdateSourceType.DirectVsixUrl or UpdateSourceType.DirectZipUrl;
+
+    private static AvailableUpdate? GetPreservedLatestRelease(ExtensionRow? previousRow, UpdateSource? source)
+        => SameSource(previousRow?.UpdateSource, source)
+            ? previousRow?.LatestRelease
+            : null;
+
+    private static bool SameSource(UpdateSource? left, UpdateSource? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return left.Type == right.Type
+            && string.Equals(left.Uri, right.Uri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task LoadExtensionsAfterMutationAsync(IReadOnlyCollection<string>? refreshLatestIds = null)
+        => await LoadExtensionsAsync(checkUpdates: false, refreshLatestIds);
+
+    private async Task LoadExtensionsAsync(bool checkUpdates = false, IReadOnlyCollection<string>? refreshLatestIds = null)
     {
         if (_selectedInstance is not { } instance)
         {
@@ -595,6 +778,12 @@ public partial class MainWindow : Window
 
         await RunBusyAsync(checkUpdates ? "Scanning extensions and checking updates..." : "Scanning extensions...", async () =>
         {
+            HashSet<string> refreshLatestSet = refreshLatestIds is null
+                ? new(StringComparer.OrdinalIgnoreCase)
+                : new(refreshLatestIds, StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ExtensionRow> previousRowsById = _allExtensions
+                .GroupBy(row => row.Manifest.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
             IReadOnlyList<InstalledExtension> scanned = await _scanner.ScanAsync([instance.Instance]);
             IReadOnlyList<ManagedExtensionRecord> records = await _managedStore.LoadAsync();
             Dictionary<string, ManagedExtensionRecord> recordsById = records
@@ -608,15 +797,17 @@ public partial class MainWindow : Window
             foreach (InstalledExtension extension in scanned)
             {
                 recordsById.TryGetValue(extension.Manifest.Id, out ManagedExtensionRecord? record);
+                previousRowsById.TryGetValue(extension.Manifest.Id, out ExtensionRow? previousRow);
                 UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource ?? InferUpdateSource(extension.Manifest);
                 InstalledExtension current = extension with
                 {
                     UpdateSource = source,
                     InstalledVersionOverride = record?.InstalledVersionOverride
                 };
-                AvailableUpdate? latest = checkUpdates && source is { Type: UpdateSourceType.GitHubRelease }
-                    ? await _updateChecker.FindLatestMatchingAssetAsync(extension.Manifest, source)
-                    : null;
+                bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(extension.Manifest.Id);
+                AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
+                    ? await _updateChecker.FindLatestMatchingAssetAsync(extension.Manifest, downloadableSource)
+                    : GetPreservedLatestRelease(previousRow, source);
                 string? installedVersionOverride = current.InstalledVersionOverride
                     ?? InferInstalledVersionOverride(record, latest, current.Manifest.Version);
                 if (installedVersionOverride is not null && !string.Equals(installedVersionOverride, current.InstalledVersionOverride, StringComparison.OrdinalIgnoreCase))
@@ -639,10 +830,12 @@ public partial class MainWindow : Window
 
             foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
             {
+                previousRowsById.TryGetValue(record.Manifest.Id, out ExtensionRow? previousRow);
                 UpdateSource? source = record.UpdateSource ?? InferUpdateSource(record.Manifest);
-                AvailableUpdate? latest = checkUpdates && source is { Type: UpdateSourceType.GitHubRelease }
-                    ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, source)
-                    : null;
+                bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(record.Manifest.Id);
+                AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
+                    ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, downloadableSource)
+                    : GetPreservedLatestRelease(previousRow, source);
 
                 ManagedExtensionRecord effectiveRecord = source == record.UpdateSource
                     ? record
@@ -658,6 +851,10 @@ public partial class MainWindow : Window
             _allExtensions.Clear();
             _allExtensions.AddRange(rows);
             ApplyExtensionFilter();
+            if (_galleryLoaded)
+            {
+                RefreshGalleryInstallStates();
+            }
         });
     }
 
@@ -698,7 +895,11 @@ public partial class MainWindow : Window
 
     private async Task UpdateRowsAsync(IReadOnlyList<ExtensionRow> rows, bool reportNoUpdate)
     {
-        await RunBusyAsync("Updating extensions...", async () =>
+        string status = rows.Count == 1
+            ? $"Updating {rows[0].DisplayName}..."
+            : "Updating extensions...";
+
+        await RunBusyAsync(status, async () =>
         {
             int updatedCount = 0;
             int skippedCount = 0;
@@ -734,7 +935,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            await LoadExtensionsAsync(checkUpdates: true);
+            await LoadExtensionsAfterMutationAsync(rows.Select(row => row.Manifest.Id).ToArray());
             if (reportNoUpdate && updatedCount == 0 && skippedCount > 0)
             {
                 ShowMessage(rows.Count == 1
@@ -751,7 +952,7 @@ public partial class MainWindow : Window
             return cached;
         }
 
-        if (row.UpdateSource is not { Type: UpdateSourceType.GitHubRelease } source)
+        if (row.UpdateSource is not { } source || !IsDownloadableSource(source))
         {
             return null;
         }
@@ -839,13 +1040,17 @@ public partial class MainWindow : Window
         return targetPath;
     }
 
-    private async Task RunBusyAsync(string status, Func<Task> action)
+    private async Task RunBusyAsync(string status, Func<Task> action, bool disableWindow = true)
     {
         try
         {
             BusyProgress.Visibility = Visibility.Visible;
             StatusText.Text = status;
-            IsEnabled = false;
+            if (disableWindow)
+            {
+                IsEnabled = false;
+            }
+
             await action();
         }
         catch (Exception ex)
@@ -854,7 +1059,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            IsEnabled = true;
+            if (disableWindow)
+            {
+                IsEnabled = true;
+            }
+
             BusyProgress.Visibility = Visibility.Collapsed;
         }
     }
@@ -906,9 +1115,56 @@ public partial class MainWindow : Window
 
     private void ManageNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Manage);
 
-    private void BrowseNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Browse);
+    private async void BrowseNavButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetCurrentView(NavigationView.Browse);
+        await LoadGalleryAsync(force: false);
+    }
 
     private void SettingsNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Settings);
+
+    private void GallerySearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateGallerySearchPlaceholderVisibility();
+        ApplyGalleryFilter();
+    }
+
+    private async void InstallGalleryExtension_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: GalleryExtensionRow row })
+        {
+            await InstallGalleryExtensionAsync(row);
+        }
+    }
+
+    private void GalleryIcon_ImageFailed(object sender, ExceptionRoutedEventArgs e)
+    {
+        if (sender is Image image)
+        {
+            image.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OpenGalleryPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: GalleryExtensionRow { PageUri: { } pageUri } })
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = pageUri.ToString(),
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(ex.Message);
+        }
+    }
 
     private void SetCurrentView(NavigationView view)
     {
@@ -1068,6 +1324,12 @@ public partial class MainWindow : Window
 
     private static string EnabledDisabled(bool enabled) => enabled ? "enabled" : "disabled";
 
+    private static string? EmptyToNull(string? value)
+    {
+        value = value?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
     private void CloseInstanceDropDownIfNeeded(MouseButtonEventArgs e)
     {
         if (!InstanceDropDownPopup.IsOpen)
@@ -1103,10 +1365,10 @@ public partial class MainWindow : Window
             : RestoreBounds;
 
         return new WindowPlacementSettings(
-            bounds.Left,
-            bounds.Top,
-            bounds.Width,
-            bounds.Height,
+            NormalizeWindowSetting(bounds.Left),
+            NormalizeWindowSetting(bounds.Top),
+            NormalizeWindowSetting(bounds.Width),
+            NormalizeWindowSetting(bounds.Height),
             WindowState == WindowState.Maximized);
     }
 
@@ -1142,6 +1404,20 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
         }
     }
+
+    private void UpdateGallerySearchPlaceholderVisibility()
+    {
+        if (GallerySearchPlaceholderText is null || GallerySearchTextBox is null)
+        {
+            return;
+        }
+
+        GallerySearchPlaceholderText.Visibility = string.IsNullOrWhiteSpace(GallerySearchTextBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private static double NormalizeWindowSetting(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }
 
 public sealed class InstanceRow(SsmsInstance instance)
@@ -1149,6 +1425,52 @@ public sealed class InstanceRow(SsmsInstance instance)
     public SsmsInstance Instance { get; } = instance;
 
     public string Display => $"{Instance.DisplayName} ({Instance.Version ?? "unknown"})";
+}
+
+public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled)
+{
+    public GalleryExtension Extension { get; } = extension;
+
+    public bool IsInstalled { get; set; } = isInstalled;
+
+    public string Id => Extension.Id;
+
+    public string DisplayName => Extension.DisplayName;
+
+    public string Summary => string.IsNullOrWhiteSpace(Extension.Summary)
+        ? "No description provided."
+        : Extension.Summary;
+
+    public string AuthorText => string.IsNullOrWhiteSpace(Extension.Author)
+        ? "Unknown publisher"
+        : $"by {Extension.Author}";
+
+    public string Version => Extension.Version;
+
+    public string VersionText => string.IsNullOrWhiteSpace(Version)
+        ? "Version unknown"
+        : $"v{Version}";
+
+    public Uri PackageUri => Extension.PackageUri;
+
+    public Uri? PageUri => Extension.PageUri;
+
+    public bool HasPageUri => PageUri is not null;
+
+    public Uri? IconUri => Extension.IconUri;
+
+    public bool CanInstall => !IsInstalled;
+
+    public string InstallButtonText => IsInstalled ? "Installed" : "Install";
+
+    public string Initials
+    {
+        get
+        {
+            string[] words = DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
+        }
+    }
 }
 
 public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? installedExtension, ManagedExtensionRecord? record, AvailableUpdate? availableUpdate, AvailableUpdate? latestRelease)
@@ -1200,7 +1522,7 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public bool HasCachedPackage => CachedVsixPath is { } cached && File.Exists(cached);
 
-    public bool CanReinstall => IsManageable && !IsInstalled && (HasCachedPackage || UpdateSource is { Type: UpdateSourceType.GitHubRelease });
+    public bool CanReinstall => IsManageable && !IsInstalled && (HasCachedPackage || UpdateSource?.Type is UpdateSourceType.GitHubRelease or UpdateSourceType.DirectVsixUrl or UpdateSourceType.DirectZipUrl);
 
     public bool CanRemoveFromList => IsManageable && !IsInstalled;
 
@@ -1212,20 +1534,54 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public string? InstalledVersionOverride => InstalledExtension?.InstalledVersionOverride ?? Record?.InstalledVersionOverride;
 
-    public Uri? GitHubUri
+    public Uri? OpenUri
     {
         get
         {
-            if (UpdateSource is not { Type: UpdateSourceType.GitHubRelease } source)
+            if (TryGetGalleryPageUri(UpdateSource?.Uri, out Uri? galleryPageUri))
             {
-                return null;
+                return galleryPageUri;
             }
 
-            return GitHubRepository.TryParse(source.Uri, out GitHubRepository repository)
-                ? repository.RepositoryUri
+            if (UpdateSource is { Type: UpdateSourceType.GitHubRelease } source
+                && GitHubRepository.TryParse(source.Uri, out GitHubRepository repository))
+            {
+                return repository.RepositoryUri;
+            }
+
+            if (Uri.TryCreate(MoreInfo, UriKind.Absolute, out Uri? moreInfoUri))
+            {
+                return moreInfoUri;
+            }
+
+            return Uri.TryCreate(UpdateSource?.Uri, UriKind.Absolute, out Uri? sourceUri)
+                ? sourceUri
                 : null;
         }
     }
 
-    public bool HasGitHubUri => GitHubUri is not null;
+    public bool HasOpenUri => OpenUri is not null;
+
+    private static bool TryGetGalleryPageUri(string? sourceUri, out Uri? pageUri)
+    {
+        pageUri = null;
+        if (!Uri.TryCreate(sourceUri, UriKind.Absolute, out Uri? uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Host, "ssmsgallery.azurewebsites.net", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string[] segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 2 || !string.Equals(segments[0], "extensions", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        pageUri = new Uri($"{uri.Scheme}://{uri.Authority}/extension/{Uri.EscapeDataString(segments[1])}");
+        return true;
+    }
 }

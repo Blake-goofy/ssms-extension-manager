@@ -23,21 +23,43 @@ public sealed class AppSettingsStore
         }
 
         await using FileStream stream = File.OpenRead(_filePath);
-        return await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions.Default, cancellationToken).ConfigureAwait(false)
+        AppSettings settings = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions.Default, cancellationToken).ConfigureAwait(false)
             ?? AppSettings.Default;
+        return Normalize(settings);
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
         await using FileStream stream = File.Create(_filePath);
-        await JsonSerializer.SerializeAsync(stream, settings, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
+        await JsonSerializer.SerializeAsync(stream, Normalize(settings), JsonOptions.Default, cancellationToken).ConfigureAwait(false);
     }
 
     public void Save(AppSettings settings)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
         using FileStream stream = File.Create(_filePath);
-        JsonSerializer.Serialize(stream, settings, JsonOptions.Default);
+        JsonSerializer.Serialize(stream, Normalize(settings), JsonOptions.Default);
     }
+
+    private static AppSettings Normalize(AppSettings settings)
+    {
+        if (settings.WindowPlacement is not { } placement)
+        {
+            return settings;
+        }
+
+        return settings with
+        {
+            WindowPlacement = placement with
+            {
+                Left = NormalizeDouble(placement.Left),
+                Top = NormalizeDouble(placement.Top),
+                Width = NormalizeDouble(placement.Width),
+                Height = NormalizeDouble(placement.Height)
+            }
+        };
+    }
+
+    private static double NormalizeDouble(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }

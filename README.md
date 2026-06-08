@@ -8,7 +8,7 @@ A standalone C# WPF app for managing third-party SSMS 22+ VSIX extensions.
 - Scans SSMS 22 per-machine and per-user extension roots for `extension.vsixmanifest`.
 - Displays installed extension identity, publisher, installed version, latest version, scope, and update source.
 - Stores user-supplied update sources under `%LocalAppData%\SsmsExtensionManager\extension-sources.json`.
-- Supports GitHub repository releases as the update source.
+- Supports GitHub repository releases and direct `.vsix`/`.zip` URLs as update sources.
 - Supports installing a local `.vsix` or `.zip` containing one `.vsix`.
 - Supports updating selected extensions or all detected updates.
 - Supports uninstall through the SSMS `VSIXInstaller.exe /u:<VSIX id>` path.

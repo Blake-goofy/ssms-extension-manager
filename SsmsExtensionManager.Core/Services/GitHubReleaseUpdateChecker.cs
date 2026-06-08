@@ -21,11 +21,16 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
 
     public async Task<AvailableUpdate?> FindLatestMatchingAssetAsync(VsixManifest manifest, UpdateSource source, CancellationToken cancellationToken = default)
     {
-        if (source.Type != UpdateSourceType.GitHubRelease)
+        return source.Type switch
         {
-            return null;
-        }
+            UpdateSourceType.GitHubRelease => await FindGitHubReleaseAssetAsync(manifest, source, cancellationToken).ConfigureAwait(false),
+            UpdateSourceType.DirectVsixUrl or UpdateSourceType.DirectZipUrl => await FindDirectAssetAsync(manifest, source, cancellationToken).ConfigureAwait(false),
+            _ => null
+        };
+    }
 
+    private async Task<AvailableUpdate?> FindGitHubReleaseAssetAsync(VsixManifest manifest, UpdateSource source, CancellationToken cancellationToken)
+    {
         if (!GitHubRepository.TryParse(source.Uri, out GitHubRepository repository))
         {
             return null;
@@ -48,10 +53,10 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
 
         foreach (GitHubAsset asset in release.Assets.Where(asset => IsSupportedAsset(asset.Name)))
         {
-            string downloaded = await DownloadAsync(asset.BrowserDownloadUrl, cancellationToken).ConfigureAwait(false);
+            DownloadedAsset downloaded = await DownloadAsync(asset.BrowserDownloadUrl, cancellationToken).ConfigureAwait(false);
             try
             {
-                ExtensionAsset resolved = assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "updates"));
+                ExtensionAsset resolved = assetResolver.Resolve(downloaded.Path, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "updates"));
                 if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -69,22 +74,59 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
             }
             finally
             {
-                TryDelete(downloaded);
+                TryDelete(downloaded.Path);
             }
         }
 
         return null;
     }
 
-    private async Task<string> DownloadAsync(Uri uri, CancellationToken cancellationToken)
+    private async Task<AvailableUpdate?> FindDirectAssetAsync(VsixManifest manifest, UpdateSource source, CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(source.Uri, UriKind.Absolute, out Uri? assetUri))
+        {
+            return null;
+        }
+
+        DownloadedAsset downloaded = await DownloadAsync(assetUri, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ExtensionAsset resolved = assetResolver.Resolve(downloaded.Path, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "updates"));
+            if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            string releaseName = Path.GetFileName(assetUri.LocalPath);
+            if (string.IsNullOrWhiteSpace(releaseName))
+            {
+                releaseName = resolved.SourceDescription;
+            }
+
+            return new AvailableUpdate(
+                resolved.Manifest.Version,
+                assetUri,
+                releaseName,
+                downloaded.LastModified ?? DateTimeOffset.UtcNow);
+        }
+        finally
+        {
+            TryDelete(downloaded.Path);
+        }
+    }
+
+    private async Task<DownloadedAsset> DownloadAsync(Uri uri, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads"));
         string targetPath = Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads", $"{Guid.NewGuid():N}{Path.GetExtension(uri.LocalPath)}");
 
-        await using Stream input = await httpClient.GetStreamAsync(uri, cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         await using FileStream output = File.Create(targetPath);
         await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        return targetPath;
+        return new DownloadedAsset(targetPath, response.Content.Headers.LastModified);
     }
 
     private static bool IsSupportedAsset(string name)
@@ -114,4 +156,8 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
     private sealed record GitHubAsset(
         string Name,
         [property: JsonPropertyName("browser_download_url")] Uri BrowserDownloadUrl);
+
+    private sealed record DownloadedAsset(
+        string Path,
+        DateTimeOffset? LastModified);
 }

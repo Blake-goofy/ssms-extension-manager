@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -9,6 +10,7 @@ namespace SsmsExtensionManager.App;
 public partial class SourceDialog : Window
 {
     private GitHubRepository? _repository;
+    private UpdateSourceType _selectedSourceType;
 
     public SourceDialog(string initialUri)
     {
@@ -19,7 +21,7 @@ public partial class SourceDialog : Window
         UpdatePlaceholderVisibility();
     }
 
-    public UpdateSourceType SelectedSourceType => UpdateSourceType.GitHubRelease;
+    public UpdateSourceType SelectedSourceType => _selectedSourceType;
 
     public string SourceUri => _repository?.ToString() ?? SourceUriTextBox.Text.Trim();
 
@@ -41,19 +43,28 @@ public partial class SourceDialog : Window
     {
         if (string.IsNullOrWhiteSpace(SourceUriTextBox.Text))
         {
-            MessageBox.Show(this, "Enter a GitHub repository.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Enter a repository or downloadable VSIX/ZIP link.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        if (!GitHubRepository.TryParse(SourceUriTextBox.Text, out GitHubRepository repository))
+        if (GitHubRepository.TryParse(SourceUriTextBox.Text, out GitHubRepository repository))
         {
-            MessageBox.Show(this, "Enter a valid GitHub repository.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _repository = repository;
+            _selectedSourceType = UpdateSourceType.GitHubRelease;
+            SourceUriTextBox.Text = repository.ToString();
+            DialogResult = true;
             return;
         }
 
-        _repository = repository;
-        SourceUriTextBox.Text = repository.ToString();
-        DialogResult = true;
+        if (TryGetDirectSourceType(SourceUriTextBox.Text, out UpdateSourceType sourceType))
+        {
+            _repository = null;
+            _selectedSourceType = sourceType;
+            DialogResult = true;
+            return;
+        }
+
+        MessageBox.Show(this, "Enter a valid GitHub repository or direct .vsix/.zip URL.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -66,5 +77,29 @@ public partial class SourceDialog : Window
         SourcePlaceholderText.Visibility = string.IsNullOrWhiteSpace(SourceUriTextBox.Text)
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    private static bool TryGetDirectSourceType(string value, out UpdateSourceType sourceType)
+    {
+        sourceType = UpdateSourceType.Unknown;
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri? uri))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(uri.LocalPath);
+        if (extension.Equals(".vsix", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceType = UpdateSourceType.DirectVsixUrl;
+            return true;
+        }
+
+        if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            sourceType = UpdateSourceType.DirectZipUrl;
+            return true;
+        }
+
+        return false;
     }
 }

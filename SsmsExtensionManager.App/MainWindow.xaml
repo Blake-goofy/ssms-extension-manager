@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="SSMS Extension Manager" Height="720" Width="1180"
+        Title="SSMS Extension Manager" Height="742" Width="1324"
         MinHeight="620" MinWidth="980"
         Loaded="Window_Loaded"
         PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
@@ -272,11 +272,11 @@
                                                 </TextBlock>
                                             </Grid>
                                             <DataTemplate.Triggers>
-                                                <DataTrigger Binding="{Binding GitHubUri}" Value="{x:Null}">
+                                                <DataTrigger Binding="{Binding OpenUri}" Value="{x:Null}">
                                                     <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Visible" />
                                                     <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding HasGitHubUri}" Value="True">
+                                                <DataTrigger Binding="{Binding HasOpenUri}" Value="True">
                                                     <Setter TargetName="ExtensionNameText" Property="Visibility" Value="Collapsed" />
                                                     <Setter TargetName="ExtensionNameLink" Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
@@ -295,11 +295,175 @@
                     </Grid>
 
                     <Grid x:Name="BrowseView" Visibility="Collapsed">
-                        <TextBlock Text="Coming soon"
-                                   FontSize="26"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0"
+                              Width="330"
+                              HorizontalAlignment="Left"
+                              Margin="0,0,0,12">
+                            <TextBox x:Name="GallerySearchTextBox"
+                                     Padding="8,5"
+                                     VerticalContentAlignment="Center"
+                                     TextChanged="GallerySearchTextBox_TextChanged" />
+                            <TextBlock x:Name="GallerySearchPlaceholderText"
+                                       Text="Filter gallery"
+                                       Margin="10,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource MutedForegroundBrush}"
+                                       IsHitTestVisible="False"
+                                       Visibility="Collapsed" />
+                        </Grid>
+
+                        <ListBox x:Name="GalleryListBox"
+                                 Grid.Row="1"
+                                 Background="{DynamicResource AppBackgroundBrush}"
+                                 BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Template>
+                                <ControlTemplate TargetType="{x:Type ListBox}">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            SnapsToDevicePixels="True">
+                                        <ScrollViewer Focusable="False"
+                                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                                      Background="{TemplateBinding Background}">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </Border>
+                                </ControlTemplate>
+                            </ListBox.Template>
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel IsItemsHost="True"
+                                               Background="{DynamicResource AppBackgroundBrush}" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="{x:Type ListBoxItem}">
+                                    <Setter Property="Width" Value="330" />
+                                    <Setter Property="MinHeight" Value="238" />
+                                    <Setter Property="Margin" Value="0,0,14,14" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                <Border x:Name="Chrome"
+                                                        Background="{TemplateBinding Background}"
+                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="16"
+                                                        SnapsToDevicePixels="True">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                                        <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource HyperlinkBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="76"
+                                                    Height="76"
+                                                    Background="Transparent"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Initials}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="19"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource MutedForegroundBrush}" />
+                                                    <Image Source="{Binding IconUri}"
+                                                           Stretch="Uniform"
+                                                           Margin="5"
+                                                           SnapsToDevicePixels="False"
+                                                           UseLayoutRounding="False"
+                                                           RenderOptions.BitmapScalingMode="Fant"
+                                                           RenderOptions.EdgeMode="Unspecified"
+                                                           ImageFailed="GalleryIcon_ImageFailed" />
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxHeight="44" />
+                                                <TextBlock Text="{Binding AuthorText}"
+                                                           Margin="0,5,0,0"
+                                                           FontSize="12.5"
+                                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding VersionText}"
+                                                           Margin="0,3,0,0"
+                                                           FontSize="12.5"
+                                                           Foreground="{DynamicResource MutedForegroundBrush}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="{Binding Summary}"
+                                                   Margin="0,14,0,14"
+                                                   FontSize="13"
+                                                   Foreground="{DynamicResource MutedForegroundBrush}"
+                                                   TextWrapping="Wrap"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxHeight="76" />
+                                        <StackPanel Grid.Row="2"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right">
+                                            <Button Content="Open page"
+                                                    Padding="10,5"
+                                                    Margin="0,0,8,0"
+                                                    IsEnabled="{Binding HasPageUri}"
+                                                    Click="OpenGalleryPage_Click" />
+                                            <Button Content="{Binding InstallButtonText}"
+                                                    Padding="10,5"
+                                                    IsEnabled="{Binding CanInstall}"
+                                                    Click="InstallGalleryExtension_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock x:Name="GalleryStatusText"
+                                   Grid.Row="2"
+                                   Margin="0,12,0,0"
                                    Foreground="{DynamicResource MutedForegroundBrush}" />
                     </Grid>
 
