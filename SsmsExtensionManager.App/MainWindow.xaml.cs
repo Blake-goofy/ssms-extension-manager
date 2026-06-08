@@ -54,6 +54,7 @@ public partial class MainWindow : Window
     private bool _darkTheme;
     private string? _preferredInstanceId;
     private bool _galleryLoaded;
+    private CancellationTokenSource? _busyCancellationTokenSource;
 
     private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
 
@@ -129,22 +130,30 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunBusyAsync("Installing extension...", async () =>
+        SetCurrentView(NavigationView.Manage);
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        await RunBusyAsync("Installing extension...", async cancellationToken =>
         {
+            if (!EnsureSsmsClosedForExtensionMutation("installation"))
+            {
+                return;
+            }
+
             ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
             string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix));
-                if (result.Success)
-                {
-                    await SaveRecordAsync(instance.Instance, asset.Manifest, null, cachedVsix, isInstalled: true, installedVersionOverride: null);
-                }
+            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
+            if (result.Success)
+            {
+                await SaveRecordAsync(instance.Instance, asset.Manifest, null, cachedVsix, isInstalled: true, installedVersionOverride: null);
+            }
             else
             {
                 ShowMessage(result.Message);
             }
 
             await LoadExtensionsAfterMutationAsync();
-        });
+        }, allowCancel: true);
     }
 
     private async void UpdateSelected_Click(object sender, RoutedEventArgs e)
@@ -182,18 +191,27 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunBusyAsync("Reinstalling extensions...", async () =>
+        SetCurrentView(NavigationView.Manage);
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        await RunBusyAsync("Reinstalling extensions...", async cancellationToken =>
         {
+            if (!EnsureSsmsClosedForExtensionMutation("installation"))
+            {
+                return;
+            }
+
             foreach (ExtensionRow row in selected.Where(row => !row.IsInstalled))
             {
-                string? packagePath = await GetReinstallPackageAsync(row);
+                cancellationToken.ThrowIfCancellationRequested();
+                string? packagePath = await GetReinstallPackageAsync(row, cancellationToken);
                 if (packagePath is null)
                 {
                     ShowMessage($"{row.DisplayName}: no cached VSIX or downloadable source is available.");
                     continue;
                 }
 
-                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(row.Instance, packagePath));
+                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(row.Instance, packagePath, cancellationToken), cancellationToken);
                 if (result.Success)
                 {
                     ExtensionAsset asset = _assetResolver.Resolve(packagePath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
@@ -207,7 +225,7 @@ public partial class MainWindow : Window
             }
 
             await LoadExtensionsAfterMutationAsync(selected.Select(row => row.Manifest.Id).ToArray());
-        });
+        }, allowCancel: true);
     }
 
     private async void SetSource_Click(object sender, RoutedEventArgs e)
@@ -256,9 +274,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunBusyAsync("Uninstalling extension...", async () =>
+        SetCurrentView(NavigationView.Manage);
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        await RunBusyAsync("Uninstalling extension...", async cancellationToken =>
         {
-            OperationResult result = await Task.Run(() => _installer.Uninstall(row.InstalledExtension));
+            if (!EnsureSsmsClosedForExtensionMutation("uninstall"))
+            {
+                return;
+            }
+
+            OperationResult result = await Task.Run(() => _installer.Uninstall(row.InstalledExtension, cancellationToken), cancellationToken);
             if (result.Success)
             {
                 await SaveRecordAsync(row.Instance, row.Manifest, row.UpdateSource, row.CachedVsixPath, isInstalled: false, installedVersionOverride: null);
@@ -269,7 +295,7 @@ public partial class MainWindow : Window
             }
 
             await LoadExtensionsAfterMutationAsync([row.Manifest.Id]);
-        });
+        }, allowCancel: true);
     }
 
     private async void RemoveFromList_Click(object sender, RoutedEventArgs e)
@@ -701,9 +727,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunBusyAsync($"Installing {row.DisplayName}...", async () =>
+        SetCurrentView(NavigationView.Manage);
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        await RunBusyAsync($"Installing {row.DisplayName}...", async cancellationToken =>
         {
-            string downloaded = await DownloadAsync(row.PackageUri);
+            string downloaded = await DownloadAsync(row.PackageUri, cancellationToken);
             string? installedManifestId = null;
             try
             {
@@ -715,7 +744,12 @@ public partial class MainWindow : Window
                 }
 
                 string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix));
+                if (!EnsureSsmsClosedForExtensionMutation("installation"))
+                {
+                    return;
+                }
+
+                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
                 if (!result.Success)
                 {
                     ShowMessage(result.Message);
@@ -734,9 +768,15 @@ public partial class MainWindow : Window
             }
 
             await LoadExtensionsAfterMutationAsync(installedManifestId is null ? null : [installedManifestId]);
+            if (installedManifestId is not null)
+            {
+                SelectExtensionRow(installedManifestId);
+                StatusText.Text = $"Installed {row.DisplayName}.";
+            }
+
             RefreshGalleryInstallStates();
             ApplyGalleryFilter(row.Id);
-        });
+        }, allowCancel: true);
     }
 
     private static UpdateSourceType SourceTypeFromPackageUri(Uri uri)
@@ -876,6 +916,20 @@ public partial class MainWindow : Window
         UpdateFooterText();
     }
 
+    private void SelectExtensionRow(string manifestId)
+    {
+        ExtensionRow? row = _extensions.FirstOrDefault(row => string.Equals(row.Manifest.Id, manifestId, StringComparison.OrdinalIgnoreCase));
+        if (row is null)
+        {
+            return;
+        }
+
+        ExtensionsGrid.SelectedItems.Clear();
+        ExtensionsGrid.SelectedItem = row;
+        ExtensionsGrid.ScrollIntoView(row);
+        UpdateSelectionActionState();
+    }
+
     private void UpdateSelectionActionState()
     {
         List<ExtensionRow> selected = ExtensionsGrid?.SelectedItems.Cast<ExtensionRow>().ToList() ?? [];
@@ -899,13 +953,22 @@ public partial class MainWindow : Window
             ? $"Updating {rows[0].DisplayName}..."
             : "Updating extensions...";
 
-        await RunBusyAsync(status, async () =>
+        SetCurrentView(NavigationView.Manage);
+        await Dispatcher.Yield(DispatcherPriority.Background);
+
+        await RunBusyAsync(status, async cancellationToken =>
         {
             int updatedCount = 0;
             int skippedCount = 0;
 
+            if (!EnsureSsmsClosedForExtensionMutation("update"))
+            {
+                return;
+            }
+
             foreach (ExtensionRow row in rows.Where(row => row.IsInstalled))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AvailableUpdate? update = row.AvailableUpdate;
                 if (update is null)
                 {
@@ -913,12 +976,12 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                string downloaded = await DownloadAsync(update.AssetUri);
+                string downloaded = await DownloadAsync(update.AssetUri, cancellationToken);
                 try
                 {
                     ExtensionAsset asset = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
                     string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                    OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix));
+                    OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix, cancellationToken), cancellationToken);
                     if (result.Success)
                     {
                         updatedCount++;
@@ -942,10 +1005,10 @@ public partial class MainWindow : Window
                     ? "No update available."
                     : "No updates available for the selected extensions.");
             }
-        });
+        }, allowCancel: true);
     }
 
-    private async Task<string?> GetReinstallPackageAsync(ExtensionRow row)
+    private async Task<string?> GetReinstallPackageAsync(ExtensionRow row, CancellationToken cancellationToken)
     {
         if (row.CachedVsixPath is { } cached && File.Exists(cached))
         {
@@ -957,13 +1020,13 @@ public partial class MainWindow : Window
             return null;
         }
 
-        AvailableUpdate? asset = row.AvailableUpdate ?? await _updateChecker.FindLatestMatchingAssetAsync(row.Manifest, source);
+        AvailableUpdate? asset = row.AvailableUpdate ?? await _updateChecker.FindLatestMatchingAssetAsync(row.Manifest, source, cancellationToken);
         if (asset is null)
         {
             return null;
         }
 
-        string downloaded = await DownloadAsync(asset.AssetUri);
+        string downloaded = await DownloadAsync(asset.AssetUri, cancellationToken);
         try
         {
             ExtensionAsset resolved = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
@@ -1028,30 +1091,108 @@ public partial class MainWindow : Window
             : null;
     }
 
-    private async Task<string> DownloadAsync(Uri uri)
+    private async Task<string> DownloadAsync(Uri uri, CancellationToken cancellationToken)
     {
         string targetRoot = Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads");
         Directory.CreateDirectory(targetRoot);
         string targetPath = Path.Combine(targetRoot, $"{Guid.NewGuid():N}{Path.GetExtension(uri.LocalPath)}");
 
-        await using Stream input = await _httpClient.GetStreamAsync(uri);
-        await using FileStream output = File.Create(targetPath);
-        await input.CopyToAsync(output);
-        return targetPath;
+        try
+        {
+            await using Stream input = await _httpClient.GetStreamAsync(uri, cancellationToken);
+            await using FileStream output = File.Create(targetPath);
+            await input.CopyToAsync(output, cancellationToken);
+            return targetPath;
+        }
+        catch
+        {
+            TryDelete(targetPath);
+            throw;
+        }
     }
 
-    private async Task RunBusyAsync(string status, Func<Task> action, bool disableWindow = true)
+    private bool EnsureSsmsClosedForExtensionMutation(string operationName)
     {
+        while (IsSsmsRunning())
+        {
+            StatusText.Text = "Close SSMS to continue.";
+            MessageBoxResult result = MessageBox.Show(
+                this,
+                $"SQL Server Management Studio is running. Close SSMS before the {operationName} can proceed, then click OK.",
+                "Close SSMS",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.OK)
+            {
+                StatusText.Text = "Operation canceled.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsSsmsRunning()
+    {
+        Process[] processes = [];
+        try
+        {
+            processes = Process.GetProcessesByName("Ssms");
+            foreach (Process process in processes)
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
+        }
+    }
+
+    private Task RunBusyAsync(string status, Func<Task> action, bool disableWindow = true)
+        => RunBusyAsync(status, _ => action(), disableWindow);
+
+    private async Task RunBusyAsync(string status, Func<CancellationToken, Task> action, bool disableWindow = true, bool allowCancel = false)
+    {
+        using CancellationTokenSource? cancellationTokenSource = allowCancel ? new CancellationTokenSource() : null;
+        _busyCancellationTokenSource = cancellationTokenSource;
+
         try
         {
             BusyProgress.Visibility = Visibility.Visible;
+            CancelBusyButton.Visibility = allowCancel ? Visibility.Visible : Visibility.Collapsed;
+            CancelBusyButton.IsEnabled = allowCancel;
             StatusText.Text = status;
             if (disableWindow)
             {
-                IsEnabled = false;
+                SetMainInputEnabled(false);
             }
 
-            await action();
+            await action(cancellationTokenSource?.Token ?? CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (cancellationTokenSource?.IsCancellationRequested == true)
+        {
+            StatusText.Text = "Operation canceled.";
         }
         catch (Exception ex)
         {
@@ -1061,11 +1202,34 @@ public partial class MainWindow : Window
         {
             if (disableWindow)
             {
-                IsEnabled = true;
+                SetMainInputEnabled(true);
             }
 
+            _busyCancellationTokenSource = null;
             BusyProgress.Visibility = Visibility.Collapsed;
+            CancelBusyButton.Visibility = Visibility.Collapsed;
+            CancelBusyButton.IsEnabled = false;
         }
+    }
+
+    private void SetMainInputEnabled(bool enabled)
+    {
+        MainMenu.IsEnabled = enabled;
+        NavigationPanel.IsEnabled = enabled;
+        PageHeaderPanel.IsEnabled = enabled;
+        ViewHost.IsEnabled = enabled;
+    }
+
+    private void CancelBusy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busyCancellationTokenSource is not { IsCancellationRequested: false } cancellationTokenSource)
+        {
+            return;
+        }
+
+        CancelBusyButton.IsEnabled = false;
+        StatusText.Text = "Canceling...";
+        cancellationTokenSource.Cancel();
     }
 
     private void ShowMessage(string message)

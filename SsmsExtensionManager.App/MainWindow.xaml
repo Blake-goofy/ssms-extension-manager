@@ -96,7 +96,7 @@
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
-        <Menu DockPanel.Dock="Top">
+        <Menu x:Name="MainMenu" DockPanel.Dock="Top">
             <MenuItem Header="_File">
                 <MenuItem Header="_Install VSIX/ZIP" Click="InstallLocal_Click" />
                 <Separator />
@@ -130,7 +130,8 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0"
+            <Border x:Name="NavigationPanel"
+                    Grid.Column="0"
                     Background="{DynamicResource PanelBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="1"
@@ -212,14 +213,17 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0" Orientation="Vertical" Margin="0,0,0,12">
+                <StackPanel x:Name="PageHeaderPanel"
+                            Grid.Row="0"
+                            Orientation="Vertical"
+                            Margin="0,0,0,12">
                     <TextBlock x:Name="PageTitleText" Text="SSMS Extension Manager" FontSize="22" FontWeight="SemiBold" />
                     <TextBlock x:Name="PageSubtitleText"
                                Text="Third-party SSMS extensions are not officially supported by Microsoft. Install only extensions you trust."
                                Foreground="{DynamicResource WarningForegroundBrush}" Margin="0,4,0,0" />
                 </StackPanel>
 
-                <Grid Grid.Row="1">
+                <Grid x:Name="ViewHost" Grid.Row="1">
                     <Grid x:Name="ManageView">
                         <DataGrid x:Name="ExtensionsGrid"
                                   AutoGenerateColumns="False"
@@ -629,12 +633,22 @@
                 </Popup>
 
                 <DockPanel Grid.Row="2" Margin="0,12,0,0" x:Name="FooterPanel">
-                    <ProgressBar DockPanel.Dock="Right"
-                                 x:Name="BusyProgress"
-                                 Width="180"
-                                 Height="16"
-                                 IsIndeterminate="True"
-                                 Visibility="Collapsed" />
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button x:Name="CancelBusyButton"
+                                Content="Cancel"
+                                Padding="10,4"
+                                Margin="0,0,8,0"
+                                Visibility="Collapsed"
+                                Click="CancelBusy_Click" />
+                        <ProgressBar x:Name="BusyProgress"
+                                     Width="180"
+                                     Height="16"
+                                     IsIndeterminate="True"
+                                     VerticalAlignment="Center"
+                                     Visibility="Collapsed" />
+                    </StackPanel>
                     <TextBlock x:Name="StatusText" Text="Ready" Foreground="{DynamicResource MutedForegroundBrush}" />
                 </DockPanel>
             </Grid>
