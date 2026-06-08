@@ -1,7 +1,10 @@
+using System.Collections;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -34,11 +37,13 @@ public partial class MainWindow : Window
     private readonly AppUpdateService _appUpdateService = new();
     private readonly GalleryFeedReader _galleryFeedReader = new();
     private readonly HttpClient _httpClient = new();
+    private readonly GalleryIconLoader _galleryIconLoader;
     private readonly ObservableCollection<InstanceRow> _instances = [];
     private readonly ObservableCollection<ExtensionRow> _extensions = [];
     private readonly ObservableCollection<GalleryExtensionRow> _galleryExtensions = [];
     private readonly List<ExtensionRow> _allExtensions = [];
     private readonly List<GalleryExtensionRow> _allGalleryExtensions = [];
+    private readonly Dictionary<string, GalleryExtension> _galleryCatalogById = new(StringComparer.OrdinalIgnoreCase);
     private readonly InstalledExtensionScanner _scanner;
     private readonly ExtensionAssetResolver _assetResolver;
     private readonly ExtensionInstaller _installer;
@@ -52,8 +57,11 @@ public partial class MainWindow : Window
     private bool _checkForApplicationUpdates = true;
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
+    private string _manageViewMode = AppSettings.ManageViewModeTiles;
     private string? _preferredInstanceId;
     private bool _galleryLoaded;
+    private bool _galleryCatalogLoaded;
+    private bool _syncingManageSelection;
     private CancellationTokenSource? _busyCancellationTokenSource;
 
     private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
@@ -65,9 +73,12 @@ public partial class MainWindow : Window
         _scanner = new InstalledExtensionScanner(_manifestReader, _sourceStore);
         _installer = new ExtensionInstaller(_assetResolver);
         _updateChecker = new GitHubReleaseUpdateChecker(_httpClient, _assetResolver);
+        _galleryIconLoader = new GalleryIconLoader(_httpClient);
         ExtensionsGrid.ItemsSource = _extensions;
+        ManageTilesListBox.ItemsSource = _extensions;
         GalleryListBox.ItemsSource = _galleryExtensions;
         UpdateGallerySearchPlaceholderVisibility();
+        ApplyManageViewMode();
         UpdateSelectionActionState();
         Title = $"SSMS Extension Manager {AppBuildInfo.Version}";
     }
@@ -78,8 +89,10 @@ public partial class MainWindow : Window
         _showMicrosoftExtensions = settings.ShowMicrosoftExtensions;
         _darkTheme = settings.DarkTheme;
         _checkForApplicationUpdates = settings.CheckForApplicationUpdates;
+        _manageViewMode = NormalizeManageViewMode(settings.ManageViewMode);
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
         ThemeManager.Apply(_darkTheme);
+        ApplyManageViewMode();
         _isInitializingSettingsControls = true;
         ShowMicrosoftExtensionsCheckBox.IsChecked = _showMicrosoftExtensions;
         DarkThemeCheckBox.IsChecked = _darkTheme;
@@ -145,7 +158,15 @@ public partial class MainWindow : Window
             OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
             if (result.Success)
             {
-                await SaveRecordAsync(instance.Instance, asset.Manifest, null, cachedVsix, isInstalled: true, installedVersionOverride: null);
+                await SaveRecordAsync(
+                    instance.Instance,
+                    asset.Manifest,
+                    null,
+                    cachedVsix,
+                    isInstalled: true,
+                    installedVersionOverride: null,
+                    timestampKind: ManagedExtensionRecord.InstalledTimestampKind,
+                    timestampAt: DateTimeOffset.UtcNow);
             }
             else
             {
@@ -159,7 +180,7 @@ public partial class MainWindow : Window
     private async void UpdateSelected_Click(object sender, RoutedEventArgs e)
     {
         CloseRowActionsPopup();
-        List<ExtensionRow> selected = ExtensionsGrid.SelectedItems.Cast<ExtensionRow>().ToList();
+        List<ExtensionRow> selected = GetSelectedExtensionRows();
         if (selected.Count == 0)
         {
             ShowMessage("Select one or more installed extensions to update.");
@@ -184,13 +205,18 @@ public partial class MainWindow : Window
     private async void Reinstall_Click(object sender, RoutedEventArgs e)
     {
         CloseRowActionsPopup();
-        List<ExtensionRow> selected = ExtensionsGrid.SelectedItems.Cast<ExtensionRow>().ToList();
+        List<ExtensionRow> selected = GetSelectedExtensionRows();
         if (selected.Count == 0)
         {
             ShowMessage("Select one or more uninstalled extensions to reinstall.");
             return;
         }
 
+        await ReinstallRowsAsync(selected);
+    }
+
+    private async Task ReinstallRowsAsync(IReadOnlyList<ExtensionRow> selected)
+    {
         SetCurrentView(NavigationView.Manage);
         await Dispatcher.Yield(DispatcherPriority.Background);
 
@@ -216,7 +242,15 @@ public partial class MainWindow : Window
                 {
                     ExtensionAsset asset = _assetResolver.Resolve(packagePath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
                     string? installedVersionOverride = row.AvailableUpdate?.Version ?? row.LatestRelease?.Version;
-                    await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, packagePath, isInstalled: true, installedVersionOverride: installedVersionOverride);
+                    await SaveRecordAsync(
+                        row.Instance,
+                        asset.Manifest,
+                        row.UpdateSource,
+                        packagePath,
+                        isInstalled: true,
+                        installedVersionOverride: installedVersionOverride,
+                        timestampKind: ManagedExtensionRecord.InstalledTimestampKind,
+                        timestampAt: DateTimeOffset.UtcNow);
                 }
                 else
                 {
@@ -231,9 +265,9 @@ public partial class MainWindow : Window
     private async void SetSource_Click(object sender, RoutedEventArgs e)
     {
         CloseRowActionsPopup();
-        if (ExtensionsGrid.SelectedItem is not ExtensionRow row)
+        if (GetPrimarySelectedExtensionRow() is not { } row)
         {
-            ShowMessage("Select an extension to set its update source.");
+            ShowMessage("Select an extension to edit its update source.");
             return;
         }
 
@@ -249,14 +283,22 @@ public partial class MainWindow : Window
 
         UpdateSource source = new(dialog.SelectedSourceType, dialog.SourceUri);
         await _sourceStore.SetAsync(row.Manifest.Id, source);
-        await SaveRecordAsync(row.Instance, row.Manifest, source, row.CachedVsixPath, row.IsInstalled, row.InstalledVersionOverride);
+        await SaveRecordAsync(
+            row.Instance,
+            row.Manifest,
+            source,
+            row.CachedVsixPath,
+            row.IsInstalled,
+            row.InstalledVersionOverride,
+            timestampKind: row.TimestampKind,
+            timestampAt: row.TimestampAt);
         await LoadExtensionsAfterMutationAsync([row.Manifest.Id]);
     }
 
     private async void Uninstall_Click(object sender, RoutedEventArgs e)
     {
         CloseRowActionsPopup();
-        if (ExtensionsGrid.SelectedItem is not ExtensionRow row || row.InstalledExtension is null)
+        if (GetPrimarySelectedExtensionRow() is not { } row || row.InstalledExtension is null)
         {
             ShowMessage("Select an installed extension to uninstall.");
             return;
@@ -287,7 +329,15 @@ public partial class MainWindow : Window
             OperationResult result = await Task.Run(() => _installer.Uninstall(row.InstalledExtension, cancellationToken), cancellationToken);
             if (result.Success)
             {
-                await SaveRecordAsync(row.Instance, row.Manifest, row.UpdateSource, row.CachedVsixPath, isInstalled: false, installedVersionOverride: null);
+                await SaveRecordAsync(
+                    row.Instance,
+                    row.Manifest,
+                    row.UpdateSource,
+                    row.CachedVsixPath,
+                    isInstalled: false,
+                    installedVersionOverride: null,
+                    timestampKind: ManagedExtensionRecord.UninstalledTimestampKind,
+                    timestampAt: DateTimeOffset.UtcNow);
             }
             else
             {
@@ -301,7 +351,7 @@ public partial class MainWindow : Window
     private async void RemoveFromList_Click(object sender, RoutedEventArgs e)
     {
         CloseRowActionsPopup();
-        List<ExtensionRow> rows = ExtensionsGrid.SelectedItems.Cast<ExtensionRow>().Where(row => !row.IsInstalled).ToList();
+        List<ExtensionRow> rows = GetSelectedExtensionRows().Where(row => !row.IsInstalled).ToList();
         if (rows.Count == 0)
         {
             ShowMessage("Select one or more uninstalled extensions to remove from the list.");
@@ -349,7 +399,7 @@ public partial class MainWindow : Window
     {
         MessageBox.Show(
             this,
-            "Right-click an extension row to update it, reinstall it, uninstall it, set its update source, or remove an uninstalled extension from the list.\n\nThe app caches VSIX packages that it installs or updates so those extensions can be reinstalled later. Extensions installed outside this app can be shown after uninstall, but they need a configured source before reinstall is reliable.\n\nUse File > Install VSIX/ZIP to install a local VSIX or ZIP containing one VSIX. Update sources can be a GitHub repository or a direct downloadable .vsix/.zip link. Use View > Refresh to rescan SSMS, View > Update All to apply available installed-extension updates, and View > Settings to choose the SSMS instance or show Microsoft-published extensions.",
+            "Use extension cards or list rows to update, reinstall, uninstall, edit update sources, or remove an uninstalled extension from the list.\n\nThe app caches VSIX packages that it installs or updates so those extensions can be reinstalled later. Extensions installed outside this app can be shown after uninstall, but they need a configured source before reinstall is reliable.\n\nUse File > Install VSIX/ZIP to install a local VSIX or ZIP containing one VSIX. Update sources can be a GitHub repository or a direct downloadable .vsix/.zip link. Use View > Refresh to rescan SSMS, View > Update All to apply available installed-extension updates, and View > Settings to choose the SSMS instance or show Microsoft-published extensions.",
             "SSMS Extension Manager Help",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
@@ -468,11 +518,67 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    private void ExtensionsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateSelectionActionState();
+    private void ExtensionsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_syncingManageSelection)
+        {
+            SyncManageSelection(ExtensionsGrid.SelectedItems.Cast<ExtensionRow>());
+        }
+
+        UpdateSelectionActionState();
+    }
+
+    private void ManageTilesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_syncingManageSelection)
+        {
+            SyncManageSelection(ManageTilesListBox.SelectedItems.Cast<ExtensionRow>());
+        }
+
+        UpdateSelectionActionState();
+    }
 
     private void ExtensionLink_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Hyperlink { DataContext: ExtensionRow row } || row.OpenUri is null)
+        if (sender is Hyperlink { DataContext: ExtensionRow row })
+        {
+            OpenExtensionPage(row);
+        }
+    }
+
+    private void OpenExtensionPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ExtensionRow row })
+        {
+            OpenExtensionPage(row);
+        }
+    }
+
+    private async void UpdateExtensionTile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: ExtensionRow row })
+        {
+            return;
+        }
+
+        SelectSingleExtensionRow(row);
+        await UpdateRowsAsync([row], reportNoUpdate: true);
+    }
+
+    private async void ReinstallExtensionTile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: ExtensionRow row })
+        {
+            return;
+        }
+
+        SelectSingleExtensionRow(row);
+        await ReinstallRowsAsync([row]);
+    }
+
+    private void OpenExtensionPage(ExtensionRow row)
+    {
+        if (row.OpenUri is null)
         {
             return;
         }
@@ -493,7 +599,7 @@ public partial class MainWindow : Window
 
     private void ConfigureRowActionsPopup()
     {
-        ExtensionRow? row = ExtensionsGrid.SelectedItem as ExtensionRow;
+        ExtensionRow? row = GetPrimarySelectedExtensionRow();
         RowUpdateButton.Visibility = row?.IsInstalled == true ? Visibility.Visible : Visibility.Collapsed;
         RowReinstallButton.Visibility = row?.IsInstalled == false ? Visibility.Visible : Visibility.Collapsed;
         RowSetSourceButton.Visibility = row is not null ? Visibility.Visible : Visibility.Collapsed;
@@ -513,6 +619,86 @@ public partial class MainWindow : Window
         if (RowActionsPopup is not null)
         {
             RowActionsPopup.IsOpen = false;
+        }
+    }
+
+    private async void ManageTilesViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetManageViewMode(AppSettings.ManageViewModeTiles);
+        await SaveSettingsAsync();
+    }
+
+    private async void ManageListViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetManageViewMode(AppSettings.ManageViewModeList);
+        await SaveSettingsAsync();
+    }
+
+    private void ExtensionTileActions_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: ExtensionRow row } button)
+        {
+            return;
+        }
+
+        SelectSingleExtensionRow(row);
+        ConfigureRowActionsPopup();
+        Point buttonPoint = button.TranslatePoint(new Point(0, button.ActualHeight + 2), ManageView);
+        RowActionsPopup.HorizontalOffset = buttonPoint.X;
+        RowActionsPopup.VerticalOffset = buttonPoint.Y;
+        RowActionsPopup.IsOpen = false;
+        RowActionsPopup.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private List<ExtensionRow> GetSelectedExtensionRows()
+    {
+        IEnumerable selected = _manageViewMode == AppSettings.ManageViewModeList
+            ? ExtensionsGrid.SelectedItems
+            : ManageTilesListBox.SelectedItems;
+        return selected.Cast<ExtensionRow>().ToList();
+    }
+
+    private ExtensionRow? GetPrimarySelectedExtensionRow()
+        => _manageViewMode == AppSettings.ManageViewModeList
+            ? ExtensionsGrid.SelectedItem as ExtensionRow
+            : ManageTilesListBox.SelectedItem as ExtensionRow;
+
+    private void SelectSingleExtensionRow(ExtensionRow row)
+    {
+        _syncingManageSelection = true;
+        try
+        {
+            ExtensionsGrid.SelectedItems.Clear();
+            ManageTilesListBox.SelectedItems.Clear();
+            ExtensionsGrid.SelectedItem = row;
+            ManageTilesListBox.SelectedItem = row;
+        }
+        finally
+        {
+            _syncingManageSelection = false;
+        }
+
+        UpdateSelectionActionState();
+    }
+
+    private void SyncManageSelection(IEnumerable<ExtensionRow> selectedRows)
+    {
+        List<ExtensionRow> rows = selectedRows.ToList();
+        _syncingManageSelection = true;
+        try
+        {
+            ExtensionsGrid.SelectedItems.Clear();
+            ManageTilesListBox.SelectedItems.Clear();
+            foreach (ExtensionRow row in rows)
+            {
+                ExtensionsGrid.SelectedItems.Add(row);
+                ManageTilesListBox.SelectedItems.Add(row);
+            }
+        }
+        finally
+        {
+            _syncingManageSelection = false;
         }
     }
 
@@ -573,7 +759,7 @@ public partial class MainWindow : Window
         ExtensionsGrid.SelectedItems.Clear();
         row.IsSelected = true;
         ConfigureRowActionsPopup();
-        _pendingRowActionsPoint = e.GetPosition(ExtensionsGrid);
+        _pendingRowActionsPoint = e.GetPosition(ManageView);
         e.Handled = true;
     }
 
@@ -639,15 +825,51 @@ public partial class MainWindow : Window
         await RunBusyAsync("Loading gallery...", async () =>
         {
             GalleryStatusText.Text = "Loading gallery...";
-            await using Stream stream = await _httpClient.GetStreamAsync(GalleryFeedUri);
-            IReadOnlyList<GalleryExtension> extensions = _galleryFeedReader.Read(stream);
+            IReadOnlyList<GalleryExtension> extensions = await LoadGalleryCatalogAsync(force);
 
             string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id;
             _allGalleryExtensions.Clear();
             _allGalleryExtensions.AddRange(extensions.Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension.Id))));
+            await LoadGalleryIconsAsync(_allGalleryExtensions);
             _galleryLoaded = true;
             ApplyGalleryFilter(selectedId);
         }, disableWindow: false);
+    }
+
+    private async Task<IReadOnlyList<GalleryExtension>> LoadGalleryCatalogAsync(bool force)
+    {
+        if (_galleryCatalogLoaded && !force)
+        {
+            return _galleryCatalogById.Values.ToList();
+        }
+
+        await using Stream stream = await _httpClient.GetStreamAsync(GalleryFeedUri);
+        IReadOnlyList<GalleryExtension> extensions = _galleryFeedReader.Read(stream);
+
+        _galleryCatalogById.Clear();
+        foreach (GalleryExtension extension in extensions)
+        {
+            _galleryCatalogById[extension.Id] = extension;
+        }
+
+        _galleryCatalogLoaded = true;
+        return _galleryCatalogById.Values.ToList();
+    }
+
+    private async Task LoadGalleryIconsAsync(IEnumerable<GalleryExtensionRow> rows)
+    {
+        foreach (GalleryExtensionRow row in rows)
+        {
+            row.SetIconSource(await _galleryIconLoader.LoadAsync(row.IconUri));
+        }
+    }
+
+    private async Task LoadExtensionIconsAsync(IEnumerable<ExtensionRow> rows)
+    {
+        foreach (ExtensionRow row in rows)
+        {
+            row.SetIconSource(await _galleryIconLoader.LoadAsync(row.IconUri));
+        }
     }
 
     private void ApplyGalleryFilter(string? preferredSelectedId = null)
@@ -758,7 +980,15 @@ public partial class MainWindow : Window
 
                 UpdateSource source = new(SourceTypeFromPackageUri(row.PackageUri), row.PackageUri.ToString());
                 await _sourceStore.SetAsync(asset.Manifest.Id, source);
-                await SaveRecordAsync(instance.Instance, asset.Manifest, source, cachedVsix, isInstalled: true, installedVersionOverride: EmptyToNull(row.Version));
+                await SaveRecordAsync(
+                    instance.Instance,
+                    asset.Manifest,
+                    source,
+                    cachedVsix,
+                    isInstalled: true,
+                    installedVersionOverride: EmptyToNull(row.Version),
+                    timestampKind: ManagedExtensionRecord.InstalledTimestampKind,
+                    timestampAt: DateTimeOffset.UtcNow);
                 installedManifestId = asset.Manifest.Id;
                 GalleryStatusText.Text = result.Message;
             }
@@ -818,6 +1048,19 @@ public partial class MainWindow : Window
 
         await RunBusyAsync(checkUpdates ? "Scanning extensions and checking updates..." : "Scanning extensions...", async () =>
         {
+            IReadOnlyList<GalleryExtension> galleryExtensions;
+            try
+            {
+                galleryExtensions = await LoadGalleryCatalogAsync(force: false);
+            }
+            catch
+            {
+                galleryExtensions = [];
+            }
+
+            Dictionary<string, GalleryExtension> galleryById = galleryExtensions
+                .GroupBy(extension => extension.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
             HashSet<string> refreshLatestSet = refreshLatestIds is null
                 ? new(StringComparer.OrdinalIgnoreCase)
                 : new(refreshLatestIds, StringComparer.OrdinalIgnoreCase);
@@ -836,13 +1079,16 @@ public partial class MainWindow : Window
 
             foreach (InstalledExtension extension in scanned)
             {
+                DateTimeOffset lastSeenAt = DateTimeOffset.UtcNow;
                 recordsById.TryGetValue(extension.Manifest.Id, out ManagedExtensionRecord? record);
                 previousRowsById.TryGetValue(extension.Manifest.Id, out ExtensionRow? previousRow);
-                UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource ?? InferUpdateSource(extension.Manifest);
+                galleryById.TryGetValue(extension.Manifest.Id, out GalleryExtension? galleryExtension);
+                UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource ?? InferUpdateSource(extension.Manifest) ?? InferUpdateSource(galleryExtension);
+                string? normalizedInstalledVersionOverride = NormalizeInstalledVersionOverride(record?.InstalledVersionOverride, extension.Manifest.Version);
                 InstalledExtension current = extension with
                 {
                     UpdateSource = source,
-                    InstalledVersionOverride = record?.InstalledVersionOverride
+                    InstalledVersionOverride = normalizedInstalledVersionOverride
                 };
                 bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(extension.Manifest.Id);
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
@@ -859,36 +1105,69 @@ public partial class MainWindow : Window
                     ? latest
                     : null;
 
-                rows.Add(new ExtensionRow(instance.Instance, current with { AvailableUpdate = update }, record, update, latest));
+                AvailableUpdate? effectiveLatest = latest ?? InferLatestFromGallery(galleryExtension);
+                AvailableUpdate? effectiveUpdate = update;
+                if (effectiveUpdate is null
+                    && effectiveLatest is not null
+                    && VersionComparer.IsNewer(effectiveLatest.Version, current.CurrentVersion))
+                {
+                    effectiveUpdate = effectiveLatest;
+                }
+
+                string timestampKind = NormalizeTimestampKind(record?.TimestampKind, isInstalled: true);
+                DateTimeOffset timestampAt = record?.TimestampAt ?? lastSeenAt;
+                rows.Add(new ExtensionRow(instance.Instance, current with { AvailableUpdate = effectiveUpdate }, record, effectiveUpdate, effectiveLatest, galleryExtension, lastSeenAt, timestampKind, timestampAt));
                 installedIds.Add(extension.Manifest.Id);
                 if (source is not null && extension.UpdateSource is null && record?.UpdateSource is null)
                 {
                     await _sourceStore.SetAsync(extension.Manifest.Id, source);
                 }
-                await SaveRecordAsync(instance.Instance, extension.Manifest, source, record?.CachedVsixPath, isInstalled: true, current.InstalledVersionOverride);
+                await SaveRecordAsync(
+                    instance.Instance,
+                    extension.Manifest,
+                    source,
+                    record?.CachedVsixPath,
+                    isInstalled: true,
+                    current.InstalledVersionOverride,
+                    lastSeenAt: lastSeenAt,
+                    timestampKind: timestampKind,
+                    timestampAt: timestampAt);
             }
 
             foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
             {
                 previousRowsById.TryGetValue(record.Manifest.Id, out ExtensionRow? previousRow);
-                UpdateSource? source = record.UpdateSource ?? InferUpdateSource(record.Manifest);
+                galleryById.TryGetValue(record.Manifest.Id, out GalleryExtension? galleryExtension);
+                UpdateSource? source = record.UpdateSource ?? InferUpdateSource(record.Manifest) ?? InferUpdateSource(galleryExtension);
                 bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(record.Manifest.Id);
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
                     ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, downloadableSource)
                     : GetPreservedLatestRelease(previousRow, source);
+                AvailableUpdate? effectiveLatest = latest ?? InferLatestFromGallery(galleryExtension);
 
                 ManagedExtensionRecord effectiveRecord = source == record.UpdateSource
                     ? record
                     : record with { UpdateSource = source };
-                rows.Add(new ExtensionRow(instance.Instance, null, effectiveRecord, latest, latest));
+                string timestampKind = NormalizeTimestampKind(effectiveRecord.TimestampKind, isInstalled: false);
+                DateTimeOffset timestampAt = effectiveRecord.TimestampAt ?? effectiveRecord.LastSeenAt;
+                rows.Add(new ExtensionRow(instance.Instance, null, effectiveRecord, effectiveLatest, effectiveLatest, galleryExtension, effectiveRecord.LastSeenAt, timestampKind, timestampAt));
                 if (source is not null && record.UpdateSource is null)
                 {
                     await _sourceStore.SetAsync(record.Manifest.Id, source);
-                    await SaveRecordAsync(record.Manifest, instance.Instance, source, record.CachedVsixPath, isInstalled: false, record.InstalledVersionOverride);
+                    await SaveRecordAsync(
+                        record.Manifest,
+                        instance.Instance,
+                        source,
+                        record.CachedVsixPath,
+                        isInstalled: false,
+                        record.InstalledVersionOverride,
+                        timestampKind: timestampKind,
+                        timestampAt: timestampAt);
                 }
             }
 
             _allExtensions.Clear();
+            await LoadExtensionIconsAsync(rows);
             _allExtensions.AddRange(rows);
             ApplyExtensionFilter();
             if (_galleryLoaded)
@@ -924,15 +1203,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        ExtensionsGrid.SelectedItems.Clear();
-        ExtensionsGrid.SelectedItem = row;
+        SelectSingleExtensionRow(row);
         ExtensionsGrid.ScrollIntoView(row);
+        ManageTilesListBox.ScrollIntoView(row);
         UpdateSelectionActionState();
     }
 
     private void UpdateSelectionActionState()
     {
-        List<ExtensionRow> selected = ExtensionsGrid?.SelectedItems.Cast<ExtensionRow>().ToList() ?? [];
+        List<ExtensionRow> selected = GetSelectedExtensionRows();
         if (SelectionUpdateMenuItem is null)
         {
             return;
@@ -985,7 +1264,15 @@ public partial class MainWindow : Window
                     if (result.Success)
                     {
                         updatedCount++;
-                        await SaveRecordAsync(row.Instance, asset.Manifest, row.UpdateSource, cachedVsix, isInstalled: true, update.Version);
+                        await SaveRecordAsync(
+                            row.Instance,
+                            asset.Manifest,
+                            row.UpdateSource,
+                            cachedVsix,
+                            isInstalled: true,
+                            update.Version,
+                            timestampKind: ManagedExtensionRecord.UpdatedTimestampKind,
+                            timestampAt: DateTimeOffset.UtcNow);
                     }
                     else
                     {
@@ -1043,10 +1330,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveRecordAsync(SsmsInstance instance, VsixManifest manifest, UpdateSource? source, string? cachedVsixPath, bool isInstalled, string? installedVersionOverride)
-        => await SaveRecordAsync(manifest, instance, source, cachedVsixPath, isInstalled, installedVersionOverride);
+    private async Task SaveRecordAsync(
+        SsmsInstance instance,
+        VsixManifest manifest,
+        UpdateSource? source,
+        string? cachedVsixPath,
+        bool isInstalled,
+        string? installedVersionOverride,
+        DateTimeOffset? lastSeenAt = null,
+        string? timestampKind = null,
+        DateTimeOffset? timestampAt = null)
+        => await SaveRecordAsync(manifest, instance, source, cachedVsixPath, isInstalled, installedVersionOverride, lastSeenAt, timestampKind, timestampAt);
 
-    private async Task SaveRecordAsync(VsixManifest manifest, SsmsInstance instance, UpdateSource? source, string? cachedVsixPath, bool isInstalled, string? installedVersionOverride)
+    private async Task SaveRecordAsync(
+        VsixManifest manifest,
+        SsmsInstance instance,
+        UpdateSource? source,
+        string? cachedVsixPath,
+        bool isInstalled,
+        string? installedVersionOverride,
+        DateTimeOffset? lastSeenAt = null,
+        string? timestampKind = null,
+        DateTimeOffset? timestampAt = null)
     {
         await _managedStore.UpsertAsync(new ManagedExtensionRecord(
             instance.Id,
@@ -1054,8 +1359,10 @@ public partial class MainWindow : Window
             source,
             cachedVsixPath,
             isInstalled,
-            DateTimeOffset.UtcNow,
-            installedVersionOverride));
+            lastSeenAt ?? DateTimeOffset.UtcNow,
+            installedVersionOverride,
+            timestampKind,
+            timestampAt));
     }
 
     private static UpdateSource? InferUpdateSource(VsixManifest manifest)
@@ -1068,11 +1375,25 @@ public partial class MainWindow : Window
         return new UpdateSource(UpdateSourceType.GitHubRelease, repository.ToString());
     }
 
+    private static UpdateSource? InferUpdateSource(GalleryExtension? galleryExtension)
+        => galleryExtension is null
+            ? null
+            : new UpdateSource(SourceTypeFromPackageUri(galleryExtension.PackageUri), galleryExtension.PackageUri.ToString());
+
+    private static AvailableUpdate? InferLatestFromGallery(GalleryExtension? galleryExtension)
+        => galleryExtension is null || string.IsNullOrWhiteSpace(galleryExtension.Version)
+            ? null
+            : new AvailableUpdate(
+                galleryExtension.Version,
+                galleryExtension.PackageUri,
+                galleryExtension.PackageUri.ToString(),
+                galleryExtension.PublishedAt ?? galleryExtension.UpdatedAt ?? DateTimeOffset.MinValue);
+
     private static string? InferInstalledVersionOverride(ManagedExtensionRecord? record, AvailableUpdate? latest, string manifestVersion)
     {
         if (record?.InstalledVersionOverride is not null)
         {
-            return record.InstalledVersionOverride;
+            return NormalizeInstalledVersionOverride(record.InstalledVersionOverride, manifestVersion);
         }
 
         if (record is not { IsInstalled: true, CachedVsixPath: { } cachedPath } || latest is null || !File.Exists(cachedPath))
@@ -1089,6 +1410,40 @@ public partial class MainWindow : Window
         return cachedTimestamp >= latest.PublishedAt.UtcDateTime.AddMinutes(-1)
             ? latest.Version
             : null;
+    }
+
+    private static string? NormalizeInstalledVersionOverride(string? installedVersionOverride, string manifestVersion)
+    {
+        if (string.IsNullOrWhiteSpace(installedVersionOverride))
+        {
+            return null;
+        }
+
+        return VersionComparer.IsNewer(installedVersionOverride, manifestVersion)
+            ? installedVersionOverride
+            : null;
+    }
+
+    private static string NormalizeTimestampKind(string? timestampKind, bool isInstalled)
+    {
+        if (string.Equals(timestampKind, ManagedExtensionRecord.InstalledTimestampKind, StringComparison.OrdinalIgnoreCase))
+        {
+            return ManagedExtensionRecord.InstalledTimestampKind;
+        }
+
+        if (string.Equals(timestampKind, ManagedExtensionRecord.UpdatedTimestampKind, StringComparison.OrdinalIgnoreCase))
+        {
+            return ManagedExtensionRecord.UpdatedTimestampKind;
+        }
+
+        if (string.Equals(timestampKind, ManagedExtensionRecord.UninstalledTimestampKind, StringComparison.OrdinalIgnoreCase))
+        {
+            return ManagedExtensionRecord.UninstalledTimestampKind;
+        }
+
+        return isInstalled
+            ? ManagedExtensionRecord.DetectedTimestampKind
+            : ManagedExtensionRecord.UninstalledTimestampKind;
     }
 
     private async Task<string> DownloadAsync(Uri uri, CancellationToken cancellationToken)
@@ -1336,6 +1691,32 @@ public partial class MainWindow : Window
         ApplyNavigation();
     }
 
+    private void SetManageViewMode(string mode)
+    {
+        _manageViewMode = NormalizeManageViewMode(mode);
+        ApplyManageViewMode();
+    }
+
+    private void ApplyManageViewMode()
+    {
+        if (ManageTilesListBox is null)
+        {
+            return;
+        }
+
+        bool tileView = _manageViewMode == AppSettings.ManageViewModeTiles;
+        ManageTilesListBox.Visibility = tileView ? Visibility.Visible : Visibility.Collapsed;
+        ExtensionsGrid.Visibility = tileView ? Visibility.Collapsed : Visibility.Visible;
+        ManageTilesViewButton.Tag = tileView ? "Active" : null;
+        ManageListViewButton.Tag = tileView ? null : "Active";
+        UpdateSelectionActionState();
+    }
+
+    private static string NormalizeManageViewMode(string? mode)
+        => string.Equals(mode, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
+            ? AppSettings.ManageViewModeList
+            : AppSettings.ManageViewModeTiles;
+
     private void ApplyNavigation()
     {
         if (ManageView is null)
@@ -1357,7 +1738,7 @@ public partial class MainWindow : Window
 
         PageSubtitleText.Text = _currentView switch
         {
-            NavigationView.Manage => "Right-click extensions in the table below to take actions such as update or uninstall.",
+            NavigationView.Manage => "Use the extension cards or list below to update, uninstall, set sources, or open extension pages.",
             NavigationView.Browse => "Third-party SSMS extensions are not officially supported by Microsoft. Install only extensions you trust.",
             NavigationView.Settings => "Choose the SSMS instance and application behavior here.",
             _ => string.Empty
@@ -1520,7 +1901,8 @@ public partial class MainWindow : Window
         ShowMicrosoftExtensionsCheckBox?.IsChecked ?? _showMicrosoftExtensions,
         DarkThemeCheckBox?.IsChecked ?? _darkTheme,
         CaptureWindowPlacement(),
-        CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates);
+        CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
+        _manageViewMode);
 
     private WindowPlacementSettings CaptureWindowPlacement()
     {
@@ -1591,8 +1973,12 @@ public sealed class InstanceRow(SsmsInstance instance)
     public string Display => $"{Instance.DisplayName} ({Instance.Version ?? "unknown"})";
 }
 
-public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled)
+public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled) : INotifyPropertyChanged
 {
+    private ImageSource? _iconSource;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public GalleryExtension Extension { get; } = extension;
 
     public bool IsInstalled { get; set; } = isInstalled;
@@ -1623,6 +2009,8 @@ public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInsta
 
     public Uri? IconUri => Extension.IconUri;
 
+    public ImageSource? IconSource => _iconSource;
+
     public bool CanInstall => !IsInstalled;
 
     public string InstallButtonText => IsInstalled ? "Installed" : "Install";
@@ -1635,10 +2023,37 @@ public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInsta
             return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
         }
     }
+
+    public void SetIconSource(ImageSource? iconSource)
+    {
+        if (ReferenceEquals(_iconSource, iconSource))
+        {
+            return;
+        }
+
+        _iconSource = iconSource;
+        OnPropertyChanged(nameof(IconSource));
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
-public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? installedExtension, ManagedExtensionRecord? record, AvailableUpdate? availableUpdate, AvailableUpdate? latestRelease)
+public sealed class ExtensionRow(
+    SsmsInstance instance,
+    InstalledExtension? installedExtension,
+    ManagedExtensionRecord? record,
+    AvailableUpdate? availableUpdate,
+    AvailableUpdate? latestRelease,
+    GalleryExtension? galleryExtension = null,
+    DateTimeOffset? lastSeenAt = null,
+    string? timestampKind = null,
+    DateTimeOffset? timestampAt = null) : INotifyPropertyChanged
 {
+    private ImageSource? _iconSource;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public SsmsInstance Instance { get; } = instance;
 
     public InstalledExtension? InstalledExtension { get; } = installedExtension;
@@ -1649,11 +2064,23 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public AvailableUpdate? LatestRelease { get; } = latestRelease;
 
+    public GalleryExtension? GalleryExtension { get; } = galleryExtension;
+
     public VsixManifest Manifest => InstalledExtension?.Manifest ?? Record!.Manifest;
 
     public bool IsInstalled => InstalledExtension is not null;
 
     public string DisplayName => Manifest.DisplayName;
+
+    public string Description => string.IsNullOrWhiteSpace(GalleryExtension?.Summary)
+        ? string.IsNullOrWhiteSpace(Manifest.Description)
+            ? "No description provided."
+            : Manifest.Description!
+        : GalleryExtension.Summary!;
+
+    public string AuthorText => string.IsNullOrWhiteSpace(Publisher)
+        ? "Unknown publisher"
+        : $"by {Publisher}";
 
     public string Status => IsInstalled
         ? "Installed"
@@ -1664,6 +2091,35 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
     public string InstalledVersion => IsInstalled ? (InstalledExtension!.CurrentVersion) : "";
 
     public string LatestVersion => LatestRelease?.Version ?? "";
+
+    public string VersionText => IsInstalled
+        ? string.IsNullOrWhiteSpace(InstalledVersion) ? "Version unknown" : $"v{InstalledVersion}"
+        : ReinstallVersion is { } reinstallVersion ? $"v{reinstallVersion}" : "Version unknown";
+
+    private string? ReinstallVersion => EmptyToNull(AvailableUpdate?.Version)
+        ?? EmptyToNull(LatestRelease?.Version)
+        ?? EmptyToNull(Record?.InstalledVersionOverride)
+        ?? EmptyToNull(Manifest.Version);
+
+    public string TimestampText => TimestampAt is { } timestampAt
+        ? timestampAt.LocalDateTime.ToString("g")
+        : "";
+
+    public string TimestampTooltipText => TimestampAt is { } timestampAt
+        ? $"{TimestampKind} at {timestampAt.LocalDateTime:g}"
+        : $"{TimestampKind} at";
+
+    public string TimestampKind { get; } = string.IsNullOrWhiteSpace(timestampKind)
+        ? (installedExtension is null
+            ? ManagedExtensionRecord.UninstalledTimestampKind
+            : ManagedExtensionRecord.DetectedTimestampKind)
+        : timestampKind!;
+
+    public DateTimeOffset? TimestampAt { get; } = timestampAt ?? lastSeenAt ?? record?.TimestampAt ?? record?.LastSeenAt;
+
+    public Uri? IconUri => GalleryExtension?.IconUri;
+
+    public ImageSource? IconSource => _iconSource;
 
     public string UpdateSourceText => UpdateSource?.Uri ?? (IsMicrosoftPublisher ? "Microsoft" : "Unknown");
 
@@ -1682,6 +2138,8 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public bool CanUpdate => IsManageable && IsInstalled && HasUpdateSource;
 
+    public bool HasAvailableUpdate => AvailableUpdate is not null && CanUpdate;
+
     public bool CanUninstall => IsManageable && IsInstalled;
 
     public bool HasCachedPackage => CachedVsixPath is { } cached && File.Exists(cached);
@@ -1694,17 +2152,26 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public string? MoreInfo => Manifest.MoreInfo;
 
-    public UpdateSource? UpdateSource => InstalledExtension?.UpdateSource ?? Record?.UpdateSource;
+    public UpdateSource? UpdateSource => InstalledExtension?.UpdateSource ?? Record?.UpdateSource ?? InferredGalleryUpdateSource;
 
     public string? InstalledVersionOverride => InstalledExtension?.InstalledVersionOverride ?? Record?.InstalledVersionOverride;
+
+    private UpdateSource? InferredGalleryUpdateSource => GalleryExtension is null
+        ? null
+        : new UpdateSource(GetSourceTypeFromPackageUri(GalleryExtension.PackageUri), GalleryExtension.PackageUri.ToString());
 
     public Uri? OpenUri
     {
         get
         {
-            if (TryGetGalleryPageUri(UpdateSource?.Uri, out Uri? galleryPageUri))
+            if (GalleryExtension?.PageUri is { } galleryOpenUri)
             {
-                return galleryPageUri;
+                return galleryOpenUri;
+            }
+
+            if (TryGetGalleryPageUri(UpdateSource?.Uri, out Uri? resolvedGalleryPageUri))
+            {
+                return resolvedGalleryPageUri;
             }
 
             if (UpdateSource is { Type: UpdateSourceType.GitHubRelease } source
@@ -1725,6 +2192,29 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
     }
 
     public bool HasOpenUri => OpenUri is not null;
+
+    public string Initials
+    {
+        get
+        {
+            string[] words = DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
+        }
+    }
+
+    public void SetIconSource(ImageSource? iconSource)
+    {
+        if (ReferenceEquals(_iconSource, iconSource))
+        {
+            return;
+        }
+
+        _iconSource = iconSource;
+        OnPropertyChanged(nameof(IconSource));
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private static bool TryGetGalleryPageUri(string? sourceUri, out Uri? pageUri)
     {
@@ -1747,5 +2237,19 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
         pageUri = new Uri($"{uri.Scheme}://{uri.Authority}/extension/{Uri.EscapeDataString(segments[1])}");
         return true;
+    }
+
+    private static UpdateSourceType GetSourceTypeFromPackageUri(Uri uri)
+    {
+        string extension = Path.GetExtension(uri.LocalPath);
+        return extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)
+            ? UpdateSourceType.DirectZipUrl
+            : UpdateSourceType.DirectVsixUrl;
+    }
+
+    private static string? EmptyToNull(string? value)
+    {
+        value = value?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

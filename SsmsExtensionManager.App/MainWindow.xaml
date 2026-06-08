@@ -93,6 +93,90 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="AccentActionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource PrimaryActionBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryActionForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryActionBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PrimaryActionHoverBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource PrimaryActionHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PrimaryActionPressedBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource PrimaryActionPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource DisabledControlBackgroundBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AccentRowActionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource AccentActionButtonStyle}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="8,3" />
+        </Style>
+
+        <Style x:Key="ViewModeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
@@ -111,7 +195,7 @@
             <MenuItem Header="_Selection">
                 <MenuItem x:Name="SelectionUpdateMenuItem" Header="_Update" Click="UpdateSelected_Click" />
                 <MenuItem x:Name="SelectionReinstallMenuItem" Header="_Reinstall" Click="Reinstall_Click" />
-                <MenuItem x:Name="SelectionSetSourceMenuItem" Header="Set _Source" Click="SetSource_Click" />
+                <MenuItem x:Name="SelectionSetSourceMenuItem" Header="Edit _Source" Click="SetSource_Click" />
                 <MenuItem x:Name="SelectionUninstallMenuItem" Header="_Uninstall" Click="Uninstall_Click" />
                 <Separator />
                 <MenuItem x:Name="SelectionRemoveMenuItem" Header="Re_move from List" Click="RemoveFromList_Click" />
@@ -225,7 +309,230 @@
 
                 <Grid x:Name="ViewHost" Grid.Row="1">
                     <Grid x:Name="ManageView">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Margin="0,0,0,12">
+                            <Button x:Name="ManageTilesViewButton"
+                                    Style="{StaticResource ViewModeButtonStyle}"
+                                    ToolTip="Tile view"
+                                    Click="ManageTilesViewButton_Click">
+                                <Path Width="14"
+                                      Height="14"
+                                      Stretch="Fill"
+                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      Data="M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z" />
+                            </Button>
+                            <Button x:Name="ManageListViewButton"
+                                    Style="{StaticResource ViewModeButtonStyle}"
+                                    Margin="-1,0,0,0"
+                                    ToolTip="List view"
+                                    Click="ManageListViewButton_Click">
+                                <Path Width="16"
+                                      Height="16"
+                                      Stretch="Uniform"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.8"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Data="M2,3 L14,3 M2,8 L14,8 M2,13 L14,13" />
+                            </Button>
+                        </StackPanel>
+
+                        <ListBox x:Name="ManageTilesListBox"
+                                 Grid.Row="1"
+                                 Background="{DynamicResource AppBackgroundBrush}"
+                                 BorderThickness="0"
+                                 SelectionMode="Extended"
+                                 SelectionChanged="ManageTilesListBox_SelectionChanged"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Template>
+                                <ControlTemplate TargetType="{x:Type ListBox}">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            SnapsToDevicePixels="True">
+                                        <ScrollViewer Focusable="False"
+                                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                                                      Background="{TemplateBinding Background}">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </Border>
+                                </ControlTemplate>
+                            </ListBox.Template>
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel IsItemsHost="True" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="{x:Type ListBoxItem}">
+                                    <Setter Property="Width" Value="330" />
+                                    <Setter Property="MinHeight" Value="238" />
+                                    <Setter Property="Margin" Value="0,0,14,14" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                <Border x:Name="Chrome"
+                                                        Background="{DynamicResource ControlBackgroundBrush}"
+                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="16"
+                                                        SnapsToDevicePixels="True">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                                                        <Setter Property="Opacity" Value="0.82" />
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Width="76"
+                                                    Height="76"
+                                                    Background="Transparent"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Initials}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="19"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource MutedForegroundBrush}" />
+                                                    <Image Source="{Binding IconSource}"
+                                                           Stretch="Uniform"
+                                                           Margin="5"
+                                                           SnapsToDevicePixels="True"
+                                                           UseLayoutRounding="True"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"
+                                                           RenderOptions.EdgeMode="Unspecified"
+                                                           ImageFailed="GalleryIcon_ImageFailed" />
+                                                </Grid>
+                                            </Border>
+
+                                            <StackPanel Grid.Column="1" Margin="12,0,8,0">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource ControlForegroundBrush}"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxHeight="44" />
+                                                <TextBlock Text="{Binding AuthorText}"
+                                                           Margin="0,5,0,0"
+                                                           FontSize="12.5"
+                                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding VersionText}"
+                                                           Margin="0,3,0,0"
+                                                           FontSize="12.5"
+                                                           Foreground="{DynamicResource MutedForegroundBrush}" />
+                                                <TextBlock Text="{Binding TimestampText}"
+                                                           Margin="0,3,0,0"
+                                                           FontSize="12.5"
+                                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                                           ToolTip="{Binding TimestampTooltipText}" />
+                                            </StackPanel>
+
+                                            <Button Grid.Column="2"
+                                                    Width="30"
+                                                    Height="26"
+                                                    Padding="0"
+                                                    ToolTip="Actions"
+                                                    Click="ExtensionTileActions_Click">
+                                                <Path Width="16"
+                                                      Height="4"
+                                                      Stretch="Uniform"
+                                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                      Data="M2,2 A2,2 0 1 1 1.999,2 M8,2 A2,2 0 1 1 7.999,2 M14,2 A2,2 0 1 1 13.999,2" />
+                                            </Button>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="1"
+                                                   Text="{Binding Description}"
+                                                   Margin="0,14,0,14"
+                                                   FontSize="13"
+                                                   Foreground="{DynamicResource MutedForegroundBrush}"
+                                                   TextWrapping="Wrap"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxHeight="76" />
+
+                                        <StackPanel Grid.Row="2"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right">
+                                            <Button Content="Open page"
+                                                    Padding="10,5"
+                                                    Margin="0,0,8,0"
+                                                    IsEnabled="{Binding HasOpenUri}"
+                                                    Click="OpenExtensionPage_Click" />
+                                            <Button x:Name="TileReinstallButton"
+                                                    Content="Reinstall"
+                                                    Padding="10,5"
+                                                    Margin="0,0,8,0"
+                                                    Visibility="Collapsed"
+                                                    Click="ReinstallExtensionTile_Click" />
+                                            <Button x:Name="TileUpdateButton"
+                                                    Content="Update"
+                                                    Style="{StaticResource AccentActionButtonStyle}"
+                                                    Padding="10,5"
+                                                    Visibility="Collapsed"
+                                                    Click="UpdateExtensionTile_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding HasAvailableUpdate}" Value="True">
+                                            <Setter TargetName="TileUpdateButton" Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsInstalled}" Value="False" />
+                                                <Condition Binding="{Binding CanReinstall}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter TargetName="TileReinstallButton" Property="Visibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
                         <DataGrid x:Name="ExtensionsGrid"
+                                  Grid.Row="1"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
@@ -292,6 +599,14 @@
                                 <DataGridTextColumn Header="Publisher" Binding="{Binding Publisher}" Width="1*" />
                                 <DataGridTextColumn Header="Installed" Binding="{Binding InstalledVersion}" Width="72" />
                                 <DataGridTextColumn Header="Latest" Binding="{Binding LatestVersion}" Width="72" />
+                                <DataGridTemplateColumn Header="Date/Time Stamp" Width="132">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TimestampText}"
+                                                       ToolTip="{Binding TimestampTooltipText}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="Update Source" Binding="{Binding UpdateSourceText}" Width="3.3*" />
                                 <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="78" />
                             </DataGrid.Columns>
@@ -359,6 +674,7 @@
                                     <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Focusable" Value="False" />
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="{x:Type ListBoxItem}">
@@ -371,15 +687,6 @@
                                                         SnapsToDevicePixels="True">
                                                     <ContentPresenter />
                                                 </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
-                                                        <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource HyperlinkBrush}" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </Setter.Value>
                                     </Setter>
@@ -411,12 +718,12 @@
                                                                FontSize="19"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource MutedForegroundBrush}" />
-                                                    <Image Source="{Binding IconUri}"
+                                                    <Image Source="{Binding IconSource}"
                                                            Stretch="Uniform"
                                                            Margin="5"
-                                                           SnapsToDevicePixels="False"
-                                                           UseLayoutRounding="False"
-                                                           RenderOptions.BitmapScalingMode="Fant"
+                                                           SnapsToDevicePixels="True"
+                                                           UseLayoutRounding="True"
+                                                           RenderOptions.BitmapScalingMode="HighQuality"
                                                            RenderOptions.EdgeMode="Unspecified"
                                                            ImageFailed="GalleryIcon_ImageFailed" />
                                                 </Grid>
@@ -581,7 +888,7 @@
                        x:Name="RowActionsPopup"
                        AllowsTransparency="True"
                        Placement="RelativePoint"
-                       PlacementTarget="{Binding ElementName=ExtensionsGrid}"
+                       PlacementTarget="{Binding ElementName=ManageView}"
                        PopupAnimation="Fade"
                        StaysOpen="True">
                     <Border Background="{DynamicResource PanelBackgroundBrush}"
@@ -602,7 +909,7 @@
                             <Button x:Name="RowUpdateButton"
                                     Content="Update"
                                     Tag="Update"
-                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Style="{StaticResource AccentRowActionButtonStyle}"
                                     Click="UpdateSelected_Click" />
                             <Button x:Name="RowReinstallButton"
                                     Content="Reinstall"
@@ -610,7 +917,7 @@
                                     Style="{StaticResource RowActionButtonStyle}"
                                     Click="Reinstall_Click" />
                             <Button x:Name="RowSetSourceButton"
-                                    Content="Set Source"
+                                    Content="Edit Source"
                                     Tag="SetSource"
                                     Style="{StaticResource RowActionButtonStyle}"
                                     Click="SetSource_Click" />

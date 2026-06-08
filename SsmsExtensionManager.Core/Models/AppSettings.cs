@@ -5,9 +5,13 @@ public sealed record AppSettings(
     bool ShowMicrosoftExtensions,
     bool DarkTheme,
     WindowPlacementSettings? WindowPlacement,
-    bool CheckForApplicationUpdates = true)
+    bool CheckForApplicationUpdates = true,
+    string ManageViewMode = AppSettings.ManageViewModeTiles)
 {
-    public static AppSettings Default { get; } = new(null, false, true, null, true);
+    public const string ManageViewModeTiles = "Tiles";
+    public const string ManageViewModeList = "List";
+
+    public static AppSettings Default { get; } = new(null, false, true, null, true, ManageViewModeTiles);
 }
 
 public sealed record WindowPlacementSettings(

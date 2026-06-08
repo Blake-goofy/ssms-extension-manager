@@ -171,13 +171,25 @@ public sealed class CoreServiceTests
         string tempRoot = CreateTempRoot();
         ManagedExtensionStore store = new(Path.Combine(tempRoot, "managed-extensions.json"));
         var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
-        var record = new ManagedExtensionRecord("SSMS22", manifest, null, "cached.vsix", false, DateTimeOffset.UtcNow, null);
+        DateTimeOffset timestampAt = DateTimeOffset.UtcNow;
+        var record = new ManagedExtensionRecord(
+            "SSMS22",
+            manifest,
+            null,
+            "cached.vsix",
+            false,
+            DateTimeOffset.UtcNow,
+            null,
+            ManagedExtensionRecord.UninstalledTimestampKind,
+            timestampAt);
 
         await store.UpsertAsync(record);
         IReadOnlyList<ManagedExtensionRecord> saved = await store.LoadAsync();
 
         Assert.Single(saved);
         Assert.Equal("Sample.Extension", saved[0].Manifest.Id);
+        Assert.Equal(ManagedExtensionRecord.UninstalledTimestampKind, saved[0].TimestampKind);
+        Assert.Equal(timestampAt, saved[0].TimestampAt);
 
         await store.RemoveAsync("SSMS22", "Sample.Extension");
         saved = await store.LoadAsync();
@@ -209,6 +221,7 @@ public sealed class CoreServiceTests
         Assert.Equal(1180, loaded.WindowPlacement.Width);
         Assert.Equal(720, loaded.WindowPlacement.Height);
         Assert.True(loaded.WindowPlacement.IsMaximized);
+        Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
     }
 
     [Fact]
@@ -230,7 +243,62 @@ public sealed class CoreServiceTests
         Assert.True(loaded.ShowMicrosoftExtensions);
         Assert.False(loaded.DarkTheme);
         Assert.True(loaded.CheckForApplicationUpdates);
+        Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
         Assert.Null(loaded.WindowPlacement);
+    }
+
+    [Fact]
+    public async Task ManagedExtensionStore_LoadsLegacyRecordsWithoutTimestampMetadata()
+    {
+        string tempRoot = CreateTempRoot();
+        string path = Path.Combine(tempRoot, "managed-extensions.json");
+        await File.WriteAllTextAsync(path, """
+            [
+              {
+                "SsmsInstanceId": "SSMS22",
+                "Manifest": {
+                  "Id": "Sample.Extension",
+                  "Version": "1.0.0",
+                  "Publisher": "Sample Publisher",
+                  "DisplayName": "Sample Extension",
+                  "Description": null,
+                  "MoreInfo": null,
+                  "ReleaseNotes": null
+                },
+                "UpdateSource": null,
+                "CachedVsixPath": "cached.vsix",
+                "IsInstalled": true,
+                "LastSeenAt": "2026-06-08T00:00:00+00:00",
+                "InstalledVersionOverride": null
+              }
+            ]
+            """);
+
+        ManagedExtensionStore store = new(path);
+        IReadOnlyList<ManagedExtensionRecord> records = await store.LoadAsync();
+
+        ManagedExtensionRecord record = Assert.Single(records);
+        Assert.Null(record.TimestampKind);
+        Assert.Null(record.TimestampAt);
+    }
+
+    [Fact]
+    public async Task AppSettingsStore_SavesManageViewMode()
+    {
+        string tempRoot = CreateTempRoot();
+        AppSettingsStore store = new(Path.Combine(tempRoot, "settings.json"));
+        var settings = new AppSettings(
+            "SSMS22.Test",
+            true,
+            false,
+            null,
+            true,
+            AppSettings.ManageViewModeList);
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(AppSettings.ManageViewModeList, loaded.ManageViewMode);
     }
 
     [Fact]

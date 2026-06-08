@@ -1,7 +1,7 @@
 <Window x:Class="SsmsExtensionManager.App.SourceDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Set Update Source"
+        Title="Edit Update Source"
         Height="210"
         Width="560"
         WindowStartupLocation="CenterOwner"

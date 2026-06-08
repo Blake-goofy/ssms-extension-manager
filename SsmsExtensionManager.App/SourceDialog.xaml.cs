@@ -43,7 +43,7 @@ public partial class SourceDialog : Window
     {
         if (string.IsNullOrWhiteSpace(SourceUriTextBox.Text))
         {
-            MessageBox.Show(this, "Enter a repository or downloadable VSIX/ZIP link.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "Enter a repository or downloadable VSIX/ZIP link.", "Edit Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -64,7 +64,7 @@ public partial class SourceDialog : Window
             return;
         }
 
-        MessageBox.Show(this, "Enter a valid GitHub repository or direct .vsix/.zip URL.", "Set Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+        MessageBox.Show(this, "Enter a valid GitHub repository or direct .vsix/.zip URL.", "Edit Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

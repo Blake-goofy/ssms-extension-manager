@@ -22,6 +22,10 @@
         <SolidColorBrush x:Key="UnavailableRowBackgroundBrush" Color="#F5F5F5" />
         <SolidColorBrush x:Key="UnavailableRowForegroundBrush" Color="#6B7280" />
         <SolidColorBrush x:Key="HyperlinkBrush" Color="#0B57D0" />
+        <SolidColorBrush x:Key="PrimaryActionBrush" Color="#0E639C" />
+        <SolidColorBrush x:Key="PrimaryActionHoverBrush" Color="#1177BB" />
+        <SolidColorBrush x:Key="PrimaryActionPressedBrush" Color="#0B578A" />
+        <SolidColorBrush x:Key="PrimaryActionForegroundBrush" Color="#FFFFFF" />
 
         <Style TargetType="{x:Type Window}">
             <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />

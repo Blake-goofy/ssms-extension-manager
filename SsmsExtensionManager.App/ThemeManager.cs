@@ -28,6 +28,10 @@ internal static class ThemeManager
         SetBrush(resources, "UnavailableRowBackgroundBrush", palette.UnavailableRowBackground);
         SetBrush(resources, "UnavailableRowForegroundBrush", palette.UnavailableRowForeground);
         SetBrush(resources, "HyperlinkBrush", palette.Hyperlink);
+        SetBrush(resources, "PrimaryActionBrush", palette.PrimaryAction);
+        SetBrush(resources, "PrimaryActionHoverBrush", palette.PrimaryActionHover);
+        SetBrush(resources, "PrimaryActionPressedBrush", palette.PrimaryActionPressed);
+        SetBrush(resources, "PrimaryActionForegroundBrush", palette.PrimaryActionForeground);
     }
 
     private static void SetBrush(ResourceDictionary resources, object key, Color color)
@@ -53,7 +57,11 @@ internal static class ThemeManager
         Color MenuItemHover,
         Color UnavailableRowBackground,
         Color UnavailableRowForeground,
-        Color Hyperlink)
+        Color Hyperlink,
+        Color PrimaryAction,
+        Color PrimaryActionHover,
+        Color PrimaryActionPressed,
+        Color PrimaryActionForeground)
     {
         public static ThemePalette Light { get; } = new(
             Color.FromRgb(0xFF, 0xFF, 0xFF),
@@ -73,7 +81,11 @@ internal static class ThemeManager
             Color.FromRgb(0xEA, 0xF2, 0xFF),
             Color.FromRgb(0xF5, 0xF5, 0xF5),
             Color.FromRgb(0x6B, 0x72, 0x80),
-            Color.FromRgb(0x0B, 0x57, 0xD0));
+            Color.FromRgb(0x0B, 0x57, 0xD0),
+            Color.FromRgb(0x0E, 0x63, 0x9C),
+            Color.FromRgb(0x11, 0x77, 0xBB),
+            Color.FromRgb(0x0B, 0x57, 0x8A),
+            Color.FromRgb(0xFF, 0xFF, 0xFF));
 
         public static ThemePalette Dark { get; } = new(
             Color.FromRgb(0x10, 0x18, 0x24),
@@ -93,6 +105,10 @@ internal static class ThemeManager
             Color.FromRgb(0x2D, 0x40, 0x59),
             Color.FromRgb(0x18, 0x24, 0x33),
             Color.FromRgb(0xA7, 0xB1, 0xC2),
-            Color.FromRgb(0x8A, 0xC7, 0xFF));
+            Color.FromRgb(0x8A, 0xC7, 0xFF),
+            Color.FromRgb(0x0E, 0x63, 0x9C),
+            Color.FromRgb(0x11, 0x77, 0xBB),
+            Color.FromRgb(0x0B, 0x57, 0x8A),
+            Color.FromRgb(0xFF, 0xFF, 0xFF));
     }
 }

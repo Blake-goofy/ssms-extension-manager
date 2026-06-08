@@ -7,4 +7,12 @@ public sealed record ManagedExtensionRecord(
     string? CachedVsixPath,
     bool IsInstalled,
     DateTimeOffset LastSeenAt,
-    string? InstalledVersionOverride = null);
+    string? InstalledVersionOverride = null,
+    string? TimestampKind = null,
+    DateTimeOffset? TimestampAt = null)
+{
+    public const string DetectedTimestampKind = "Detected";
+    public const string InstalledTimestampKind = "Installed";
+    public const string UpdatedTimestampKind = "Updated";
+    public const string UninstalledTimestampKind = "Uninstalled";
+}
