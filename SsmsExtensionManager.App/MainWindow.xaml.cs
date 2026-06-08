@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private InstanceRow? _selectedInstance;
     private NavigationView _currentView = NavigationView.Manage;
     private bool _isInitializingSettingsControls;
+    private string _settingsStatusText = string.Empty;
     private bool _checkForApplicationUpdates = true;
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
@@ -456,7 +457,12 @@ public partial class MainWindow : Window
         RowUninstallButton.Visibility = row?.IsInstalled == true ? Visibility.Visible : Visibility.Collapsed;
         RowRemoveSeparator.Visibility = row?.IsInstalled == false ? Visibility.Visible : Visibility.Collapsed;
         RowRemoveButton.Visibility = row?.IsInstalled == false ? Visibility.Visible : Visibility.Collapsed;
+        bool isManageable = row?.IsManageable == true;
+        RowUpdateButton.IsEnabled = row?.CanUpdate == true;
         RowReinstallButton.IsEnabled = row?.CanReinstall == true;
+        RowSetSourceButton.IsEnabled = isManageable;
+        RowUninstallButton.IsEnabled = row?.CanUninstall == true;
+        RowRemoveButton.IsEnabled = row?.CanRemoveFromList == true;
     }
 
     private void CloseRowActionsPopup()
@@ -568,10 +574,10 @@ public partial class MainWindow : Window
 
             if (_selectedInstance is null)
             {
-                StatusText.Text = "No SSMS 22 installation was detected.";
                 _allExtensions.Clear();
                 _extensions.Clear();
                 UpdateSelectionActionState();
+                UpdateFooterText();
             }
             else
             {
@@ -669,12 +675,8 @@ public partial class MainWindow : Window
             _extensions.Add(row);
         }
 
-        int hiddenCount = _allExtensions.Count - visibleRows.Count;
-        string instanceText = _selectedInstance is null ? "No SSMS instance selected" : _selectedInstance.Display;
-        StatusText.Text = hiddenCount == 0
-            ? $"{instanceText}. {FormatCount(_extensions.Count, "Extension")} shown."
-            : $"{instanceText}. {FormatCount(_extensions.Count, "Extension")} shown. {FormatCount(hiddenCount, "Microsoft extension")} hidden.";
         UpdateSelectionActionState();
+        UpdateFooterText();
     }
 
     private void UpdateSelectionActionState()
@@ -687,11 +689,11 @@ public partial class MainWindow : Window
 
         bool hasInstalled = selected.Any(row => row.IsInstalled);
         bool hasUninstalled = selected.Any(row => !row.IsInstalled);
-        SelectionUpdateMenuItem.IsEnabled = hasInstalled;
-        SelectionUninstallMenuItem.IsEnabled = hasInstalled;
-        SelectionSetSourceMenuItem.IsEnabled = selected.Count == 1;
-        SelectionReinstallMenuItem.IsEnabled = hasUninstalled && selected.All(row => row.IsInstalled || row.CanReinstall);
-        SelectionRemoveMenuItem.IsEnabled = hasUninstalled;
+        SelectionUpdateMenuItem.IsEnabled = selected.Any(row => row.CanUpdate);
+        SelectionUninstallMenuItem.IsEnabled = selected.Any(row => row.CanUninstall);
+        SelectionSetSourceMenuItem.IsEnabled = selected.Count == 1 && selected[0].IsManageable;
+        SelectionReinstallMenuItem.IsEnabled = hasUninstalled && selected.Any(row => row.CanReinstall) && selected.All(row => row.IsInstalled || !row.IsManageable || row.CanReinstall);
+        SelectionRemoveMenuItem.IsEnabled = hasUninstalled && selected.Any(row => row.CanRemoveFromList);
     }
 
     private async Task UpdateRowsAsync(IReadOnlyList<ExtensionRow> rows, bool reportNoUpdate)
@@ -945,6 +947,8 @@ public partial class MainWindow : Window
         ManageNavButton.Tag = _currentView == NavigationView.Manage ? "Active" : null;
         BrowseNavButton.Tag = _currentView == NavigationView.Browse ? "Active" : null;
         SettingsNavButton.Tag = _currentView == NavigationView.Settings ? "Active" : null;
+        FooterPanel.Visibility = _currentView == NavigationView.Browse ? Visibility.Collapsed : Visibility.Visible;
+        UpdateFooterText();
     }
 
     private void InstanceDropDown_Click(object sender, RoutedEventArgs e)
@@ -1019,6 +1023,18 @@ public partial class MainWindow : Window
         {
             await RefreshApplicationUpdateStateAsync(interactive: false, promptToApply: false);
         }
+
+        _settingsStatusText = sender switch
+        {
+            CheckBox checkBox when checkBox == ShowMicrosoftExtensionsCheckBox
+                => $"Show extensions published by Microsoft {EnabledDisabled(_showMicrosoftExtensions)}.",
+            CheckBox checkBox when checkBox == DarkThemeCheckBox
+                => $"Dark theme {EnabledDisabled(_darkTheme)}.",
+            CheckBox checkBox when checkBox == CheckForAppUpdatesCheckBox
+                => $"Check for application updates on startup {EnabledDisabled(_checkForApplicationUpdates)}.",
+            _ => string.Empty
+        };
+        UpdateFooterText();
     }
 
     private void UpdateApplicationUpdateButton()
@@ -1032,6 +1048,25 @@ public partial class MainWindow : Window
             && _applicationUpdateResult?.Status is AppUpdateCheckStatus.UpdateAvailable or AppUpdateCheckStatus.UpdatePendingRestart;
         UpdateAppButton.Visibility = showButton ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void UpdateFooterText()
+    {
+        if (StatusText is null)
+        {
+            return;
+        }
+
+        StatusText.Text = _currentView switch
+        {
+            NavigationView.Manage => _selectedInstance is null
+                ? "No SSMS 22 installation was detected."
+                : $"{FormatCount(_extensions.Count, "Extension")} shown.",
+            NavigationView.Settings => _settingsStatusText,
+            _ => string.Empty
+        };
+    }
+
+    private static string EnabledDisabled(bool enabled) => enabled ? "enabled" : "disabled";
 
     private void CloseInstanceDropDownIfNeeded(MouseButtonEventArgs e)
     {
@@ -1144,7 +1179,7 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
 
     public string LatestVersion => LatestRelease?.Version ?? "";
 
-    public string UpdateSourceText => UpdateSource?.Uri ?? "Unknown";
+    public string UpdateSourceText => UpdateSource?.Uri ?? (IsMicrosoftPublisher ? "Microsoft" : "Unknown");
 
     public string Scope => IsInstalled
         ? InstalledExtension!.IsPerUser ? "Per-user" : "Machine"
@@ -1155,9 +1190,19 @@ public sealed class ExtensionRow(SsmsInstance instance, InstalledExtension? inst
         || Publisher.Equals("Microsoft Corporation", StringComparison.OrdinalIgnoreCase)
         || Publisher.StartsWith("Microsoft ", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsManageable => !IsMicrosoftPublisher;
+
+    public bool HasUpdateSource => UpdateSource is not null;
+
+    public bool CanUpdate => IsManageable && IsInstalled && HasUpdateSource;
+
+    public bool CanUninstall => IsManageable && IsInstalled;
+
     public bool HasCachedPackage => CachedVsixPath is { } cached && File.Exists(cached);
 
-    public bool CanReinstall => !IsInstalled && (HasCachedPackage || UpdateSource is { Type: UpdateSourceType.GitHubRelease });
+    public bool CanReinstall => IsManageable && !IsInstalled && (HasCachedPackage || UpdateSource is { Type: UpdateSourceType.GitHubRelease });
+
+    public bool CanRemoveFromList => IsManageable && !IsInstalled;
 
     public string? CachedVsixPath => Record?.CachedVsixPath;
 

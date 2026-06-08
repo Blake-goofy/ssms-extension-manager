@@ -258,7 +258,7 @@
                                 </Style>
                             </DataGrid.RowStyle>
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="Extension" Width="1.5*">
+                                <DataGridTemplateColumn Header="Extension" Width="1.5*" SortMemberPath="DisplayName">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid>
@@ -464,7 +464,7 @@
                     </Border>
                 </Popup>
 
-                <DockPanel Grid.Row="2" Margin="0,12,0,0">
+                <DockPanel Grid.Row="2" Margin="0,12,0,0" x:Name="FooterPanel">
                     <ProgressBar DockPanel.Dock="Right"
                                  x:Name="BusyProgress"
                                  Width="180"

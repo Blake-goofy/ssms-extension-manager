@@ -7,7 +7,7 @@ public sealed record AppSettings(
     WindowPlacementSettings? WindowPlacement,
     bool CheckForApplicationUpdates = true)
 {
-    public static AppSettings Default { get; } = new(null, false, false, null, true);
+    public static AppSettings Default { get; } = new(null, false, true, null, true);
 }
 
 public sealed record WindowPlacementSettings(
