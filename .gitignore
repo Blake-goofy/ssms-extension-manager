@@ -9,6 +9,7 @@ artifacts/
 # User and IDE files
 .vs/
 .idea/
+.github/copilot-instructions.md
 *.user
 *.rsuser
 *.suo

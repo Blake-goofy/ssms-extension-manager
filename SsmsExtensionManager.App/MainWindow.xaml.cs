@@ -600,7 +600,7 @@ public partial class MainWindow : Window
     private void ConfigureRowActionsPopup()
     {
         ExtensionRow? row = GetPrimarySelectedExtensionRow();
-        RowUpdateButton.Visibility = row?.IsInstalled == true ? Visibility.Visible : Visibility.Collapsed;
+        RowUpdateButton.Visibility = row?.HasAvailableUpdate == true ? Visibility.Visible : Visibility.Collapsed;
         RowReinstallButton.Visibility = row?.IsInstalled == false ? Visibility.Visible : Visibility.Collapsed;
         RowSetSourceButton.Visibility = row is not null ? Visibility.Visible : Visibility.Collapsed;
         RowUninstallButton.Visibility = row?.IsInstalled == true ? Visibility.Visible : Visibility.Collapsed;
