@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -66,7 +67,79 @@ jobs:
           -p:AppUpdateSourceUrl=https://github.com/${{ github.repository }}
           -p:ContinuousIntegrationBuild=true
 
+      - name: Detect Trusted Signing configuration
+        id: trusted-signing
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ vars.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ vars.TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ vars.TRUSTED_SIGNING_ENDPOINT }}
+        run: |
+          $requiredValues = @(
+            $env:AZURE_CLIENT_ID,
+            $env:AZURE_TENANT_ID,
+            $env:AZURE_SUBSCRIPTION_ID,
+            $env:TRUSTED_SIGNING_ACCOUNT,
+            $env:TRUSTED_SIGNING_CERTIFICATE_PROFILE,
+            $env:TRUSTED_SIGNING_ENDPOINT
+          )
+
+          $enabled = ($requiredValues | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -eq 0
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Azure login for Trusted Signing
+        if: steps.trusted-signing.outputs.enabled == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Trusted Signing metadata
+        if: steps.trusted-signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          TRUSTED_SIGNING_ACCOUNT: ${{ vars.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ vars.TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ vars.TRUSTED_SIGNING_ENDPOINT }}
+        run: |
+          New-Item -ItemType Directory -Force -Path .\artifacts | Out-Null
+
+          @{
+            Endpoint = $env:TRUSTED_SIGNING_ENDPOINT
+            CodeSigningAccountName = $env:TRUSTED_SIGNING_ACCOUNT
+            CertificateProfileName = $env:TRUSTED_SIGNING_CERTIFICATE_PROFILE
+            ExcludeCredentials = @(
+              'ManagedIdentityCredential',
+              'WorkloadIdentityCredential',
+              'SharedTokenCacheCredential',
+              'VisualStudioCredential',
+              'VisualStudioCodeCredential',
+              'AzurePowerShellCredential',
+              'AzureDeveloperCliCredential',
+              'InteractiveBrowserCredential'
+            )
+          } | ConvertTo-Json -Depth 3 | Set-Content -Path .\artifacts\trusted-signing-metadata.json -Encoding utf8
+
+      - name: Pack Velopack release with Trusted Signing
+        if: steps.trusted-signing.outputs.enabled == 'true'
+        run: >
+          dotnet tool run vpk pack
+          --packId SsmsExtensionManager
+          --packVersion ${{ steps.version.outputs.version }}
+          --packDir .\artifacts\publish
+          --mainExe SsmsExtensionManager.App.exe
+          --packTitle "SSMS Extension Manager"
+          --outputDir .\artifacts\Releases
+          --channel win
+          --runtime win-x64
+          --azureTrustedSignFile .\artifacts\trusted-signing-metadata.json
+
       - name: Pack Velopack release
+        if: steps.trusted-signing.outputs.enabled != 'true'
         run: >
           dotnet tool run vpk pack
           --packId SsmsExtensionManager
