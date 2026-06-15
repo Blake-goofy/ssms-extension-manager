@@ -177,6 +177,123 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="ExtensionFilterHostStyle" TargetType="{x:Type Grid}">
+            <Setter Property="Width" Value="330" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+
+        <ItemsPanelTemplate x:Key="ExtensionTilesItemsPanelTemplate">
+            <WrapPanel IsItemsHost="True"
+                       Background="{DynamicResource AppBackgroundBrush}" />
+        </ItemsPanelTemplate>
+
+        <ControlTemplate x:Key="ExtensionTilesListBoxTemplate" TargetType="{x:Type ListBox}">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    SnapsToDevicePixels="True">
+                <ScrollViewer Focusable="False"
+                              HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                              VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                              CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                              Background="{TemplateBinding Background}">
+                    <ItemsPresenter />
+                </ScrollViewer>
+            </Border>
+        </ControlTemplate>
+
+        <Style x:Key="ExtensionTilesListBoxStyle" TargetType="{x:Type ListBox}">
+            <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Template" Value="{StaticResource ExtensionTilesListBoxTemplate}" />
+            <Setter Property="ItemsPanel" Value="{StaticResource ExtensionTilesItemsPanelTemplate}" />
+        </Style>
+
+        <Style x:Key="ExtensionTileItemContainerStyle" TargetType="{x:Type ListBoxItem}">
+            <Setter Property="Width" Value="330" />
+            <Setter Property="MinHeight" Value="238" />
+            <Setter Property="Margin" Value="0,0,14,14" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="16"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ManageExtensionTileItemContainerStyle" TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource ExtensionTileItemContainerStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                    <Setter Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                    <Setter Property="Opacity" Value="0.82" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ExtensionListColumnHeaderStyle" TargetType="{x:Type DataGridColumnHeader}" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="13.5" />
+        </Style>
+
+        <Style x:Key="ExtensionListGridStyle" TargetType="{x:Type DataGrid}">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="FontSize" Value="13.5" />
+            <Setter Property="ColumnHeaderStyle" Value="{StaticResource ExtensionListColumnHeaderStyle}" />
+        </Style>
+
+        <Style x:Key="ExtensionListRowStyle" TargetType="{x:Type DataGridRow}">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ManageExtensionListRowStyle" TargetType="{x:Type DataGridRow}">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsInstalled}" Value="False">
+                    <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                    <Setter Property="FontStyle" Value="Italic" />
+                    <Setter Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
+                </DataTrigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
@@ -314,98 +431,56 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0"
-                                    Orientation="Horizontal"
-                                    Margin="0,0,0,12">
-                            <Button x:Name="ManageTilesViewButton"
-                                    Style="{StaticResource ViewModeButtonStyle}"
-                                    ToolTip="Tile view"
-                                    Click="ManageTilesViewButton_Click">
-                                <Path Width="14"
-                                      Height="14"
-                                      Stretch="Fill"
-                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                      Data="M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z" />
-                            </Button>
-                            <Button x:Name="ManageListViewButton"
-                                    Style="{StaticResource ViewModeButtonStyle}"
-                                    Margin="-1,0,0,0"
-                                    ToolTip="List view"
-                                    Click="ManageListViewButton_Click">
-                                <Path Width="16"
-                                      Height="16"
-                                      Stretch="Uniform"
-                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                      StrokeThickness="1.8"
-                                      StrokeStartLineCap="Round"
-                                      StrokeEndLineCap="Round"
-                                      Data="M2,3 L14,3 M2,8 L14,8 M2,13 L14,13" />
-                            </Button>
-                        </StackPanel>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                            <StackPanel DockPanel.Dock="Right"
+                                        Orientation="Horizontal">
+                                <Button x:Name="ManageTilesViewButton"
+                                        Style="{StaticResource ViewModeButtonStyle}"
+                                        ToolTip="Tile view"
+                                        Click="ManageTilesViewButton_Click">
+                                    <Path Width="14"
+                                          Height="14"
+                                          Stretch="Fill"
+                                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          Data="M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z" />
+                                </Button>
+                                <Button x:Name="ManageListViewButton"
+                                        Style="{StaticResource ViewModeButtonStyle}"
+                                        Margin="-1,0,0,0"
+                                        ToolTip="List view"
+                                        Click="ManageListViewButton_Click">
+                                    <Path Width="16"
+                                          Height="16"
+                                          Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.8"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Data="M2,3 L14,3 M2,8 L14,8 M2,13 L14,13" />
+                                </Button>
+                            </StackPanel>
+
+                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
+                                <TextBox x:Name="ManageSearchTextBox"
+                                         Padding="8,5"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="ManageSearchTextBox_TextChanged" />
+                                <TextBlock x:Name="ManageSearchPlaceholderText"
+                                           Text="Filter managed extensions"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                           IsHitTestVisible="False"
+                                           Visibility="Collapsed" />
+                            </Grid>
+                        </DockPanel>
 
                         <ListBox x:Name="ManageTilesListBox"
                                  Grid.Row="1"
-                                 Background="{DynamicResource AppBackgroundBrush}"
-                                 BorderThickness="0"
+                                 Style="{StaticResource ExtensionTilesListBoxStyle}"
+                                 ItemContainerStyle="{StaticResource ManageExtensionTileItemContainerStyle}"
                                  SelectionMode="Extended"
-                                 SelectionChanged="ManageTilesListBox_SelectionChanged"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.Template>
-                                <ControlTemplate TargetType="{x:Type ListBox}">
-                                    <Border Background="{TemplateBinding Background}"
-                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                            SnapsToDevicePixels="True">
-                                        <ScrollViewer Focusable="False"
-                                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
-                                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
-                                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
-                                                      Background="{TemplateBinding Background}">
-                                            <ItemsPresenter />
-                                        </ScrollViewer>
-                                    </Border>
-                                </ControlTemplate>
-                            </ListBox.Template>
-                            <ListBox.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel IsItemsHost="True" />
-                                </ItemsPanelTemplate>
-                            </ListBox.ItemsPanel>
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="{x:Type ListBoxItem}">
-                                    <Setter Property="Width" Value="330" />
-                                    <Setter Property="MinHeight" Value="238" />
-                                    <Setter Property="Margin" Value="0,0,14,14" />
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="BorderThickness" Value="0" />
-                                    <Setter Property="Focusable" Value="False" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                <Border x:Name="Chrome"
-                                                        Background="{DynamicResource ControlBackgroundBrush}"
-                                                        BorderBrush="{DynamicResource BorderBrush}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="4"
-                                                        Padding="16"
-                                                        SnapsToDevicePixels="True">
-                                                    <ContentPresenter />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <DataTrigger Binding="{Binding IsInstalled}" Value="False">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
-                                                        <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
-                                                        <Setter Property="Opacity" Value="0.82" />
-                                                    </DataTrigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
+                                 SelectionChanged="ManageTilesListBox_SelectionChanged">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid>
@@ -533,41 +608,13 @@
 
                         <DataGrid x:Name="ExtensionsGrid"
                                   Grid.Row="1"
-                                  AutoGenerateColumns="False"
-                                  CanUserAddRows="False"
-                                  CanUserDeleteRows="False"
-                                  IsReadOnly="True"
+                                  Style="{StaticResource ExtensionListGridStyle}"
+                                  RowStyle="{StaticResource ManageExtensionListRowStyle}"
                                   SelectionMode="Extended"
                                   SelectionChanged="ExtensionsGrid_SelectionChanged"
                                   PreviewMouseLeftButtonDown="ExtensionsGrid_PreviewMouseLeftButtonDown"
                                   PreviewMouseRightButtonDown="ExtensionsGrid_PreviewMouseRightButtonDown"
-                                  PreviewMouseRightButtonUp="ExtensionsGrid_PreviewMouseRightButtonUp"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  FontSize="13.5">
-                            <DataGrid.Resources>
-                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                                    <Setter Property="FontWeight" Value="Bold" />
-                                    <Setter Property="FontSize" Value="13.5" />
-                                </Style>
-                            </DataGrid.Resources>
-                            <DataGrid.RowStyle>
-                                <Style TargetType="DataGridRow">
-                                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-                                    <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsInstalled}" Value="False">
-                                            <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
-                                            <Setter Property="FontStyle" Value="Italic" />
-                                            <Setter Property="Background" Value="{DynamicResource UnavailableRowBackgroundBrush}" />
-                                        </DataTrigger>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
-                                            <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </DataGrid.RowStyle>
+                                  PreviewMouseRightButtonUp="ExtensionsGrid_PreviewMouseRightButtonUp">
                             <DataGrid.Columns>
                                 <DataGridTemplateColumn Header="Extension" Width="1.5*" SortMemberPath="DisplayName">
                                     <DataGridTemplateColumn.CellTemplate>
@@ -620,78 +667,56 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0"
-                              Width="330"
-                              HorizontalAlignment="Left"
-                              Margin="0,0,0,12">
-                            <TextBox x:Name="GallerySearchTextBox"
-                                     Padding="8,5"
-                                     VerticalContentAlignment="Center"
-                                     TextChanged="GallerySearchTextBox_TextChanged" />
-                            <TextBlock x:Name="GallerySearchPlaceholderText"
-                                       Text="Filter gallery"
-                                       Margin="10,0,0,0"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource MutedForegroundBrush}"
-                                       IsHitTestVisible="False"
-                                       Visibility="Collapsed" />
-                        </Grid>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                            <StackPanel DockPanel.Dock="Right"
+                                        Orientation="Horizontal">
+                                <Button x:Name="BrowseTilesViewButton"
+                                        Style="{StaticResource ViewModeButtonStyle}"
+                                        ToolTip="Tile view"
+                                        Click="BrowseTilesViewButton_Click">
+                                    <Path Width="14"
+                                          Height="14"
+                                          Stretch="Fill"
+                                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          Data="M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z" />
+                                </Button>
+                                <Button x:Name="BrowseListViewButton"
+                                        Style="{StaticResource ViewModeButtonStyle}"
+                                        Margin="-1,0,0,0"
+                                        ToolTip="List view"
+                                        Click="BrowseListViewButton_Click">
+                                    <Path Width="16"
+                                          Height="16"
+                                          Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.8"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Data="M2,3 L14,3 M2,8 L14,8 M2,13 L14,13" />
+                                </Button>
+                            </StackPanel>
+
+                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
+                                <TextBox x:Name="GallerySearchTextBox"
+                                         Padding="8,5"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="GallerySearchTextBox_TextChanged" />
+                                <TextBlock x:Name="GallerySearchPlaceholderText"
+                                           Text="Filter gallery"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                           IsHitTestVisible="False"
+                                           Visibility="Collapsed" />
+                            </Grid>
+                        </DockPanel>
 
                         <ListBox x:Name="GalleryListBox"
                                  Grid.Row="1"
-                                 Background="{DynamicResource AppBackgroundBrush}"
-                                 BorderThickness="0"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.Template>
-                                <ControlTemplate TargetType="{x:Type ListBox}">
-                                    <Border Background="{TemplateBinding Background}"
-                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                            SnapsToDevicePixels="True">
-                                        <ScrollViewer Focusable="False"
-                                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
-                                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
-                                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
-                                                      Background="{TemplateBinding Background}">
-                                            <ItemsPresenter />
-                                        </ScrollViewer>
-                                    </Border>
-                                </ControlTemplate>
-                            </ListBox.Template>
-                            <ListBox.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel IsItemsHost="True"
-                                               Background="{DynamicResource AppBackgroundBrush}" />
-                                </ItemsPanelTemplate>
-                            </ListBox.ItemsPanel>
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="{x:Type ListBoxItem}">
-                                    <Setter Property="Width" Value="330" />
-                                    <Setter Property="MinHeight" Value="238" />
-                                    <Setter Property="Margin" Value="0,0,14,14" />
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-                                    <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                    <Setter Property="Focusable" Value="False" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                <Border x:Name="Chrome"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{DynamicResource BorderBrush}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="4"
-                                                        Padding="16"
-                                                        SnapsToDevicePixels="True">
-                                                    <ContentPresenter />
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
+                                 Style="{StaticResource ExtensionTilesListBoxStyle}"
+                                 ItemContainerStyle="{StaticResource ExtensionTileItemContainerStyle}"
+                                 PreviewMouseRightButtonDown="GalleryListBox_PreviewMouseRightButtonDown"
+                                 PreviewMouseRightButtonUp="GalleryListBox_PreviewMouseRightButtonUp">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid>
@@ -763,6 +788,7 @@
                                                     IsEnabled="{Binding HasPageUri}"
                                                     Click="OpenGalleryPage_Click" />
                                             <Button Content="{Binding InstallButtonText}"
+                                                    Style="{StaticResource AccentActionButtonStyle}"
                                                     Padding="10,5"
                                                     IsEnabled="{Binding CanInstall}"
                                                     Click="InstallGalleryExtension_Click" />
@@ -771,6 +797,31 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+
+                        <DataGrid x:Name="GalleryGrid"
+                                  Grid.Row="1"
+                                  Style="{StaticResource ExtensionListGridStyle}"
+                                  RowStyle="{StaticResource ExtensionListRowStyle}"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                                  SelectionMode="Single"
+                                  PreviewMouseRightButtonDown="GalleryGrid_PreviewMouseRightButtonDown"
+                                  PreviewMouseRightButtonUp="GalleryGrid_PreviewMouseRightButtonUp"
+                                  Visibility="Collapsed">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Extension" Binding="{Binding DisplayName}" Width="220" SortMemberPath="DisplayName" />
+                                <DataGridTextColumn Header="Publisher" Binding="{Binding Extension.Author}" Width="140" />
+                                <DataGridTextColumn Header="Version" Binding="{Binding VersionText}" Width="86" />
+                                <DataGridTextColumn Header="Status" Binding="{Binding InstallButtonText}" Width="92" />
+                                <DataGridTemplateColumn Header="Summary" Width="SizeToCells" MinWidth="520">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Summary}"
+                                                       TextWrapping="NoWrap" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
 
                         <TextBlock x:Name="GalleryStatusText"
                                    Grid.Row="2"
@@ -935,6 +986,40 @@
                                     Tag="Remove"
                                     Style="{StaticResource RowActionButtonStyle}"
                                     Click="RemoveFromList_Click" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+
+                <Popup Grid.Row="1"
+                       x:Name="GalleryActionsPopup"
+                       AllowsTransparency="True"
+                       Placement="RelativePoint"
+                       PlacementTarget="{Binding ElementName=BrowseView}"
+                       PopupAnimation="Fade"
+                       StaysOpen="True">
+                    <Border Background="{DynamicResource PanelBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            MinWidth="150"
+                            Padding="3"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="10"
+                                              Direction="270"
+                                              Opacity="0.18"
+                                              ShadowDepth="2"
+                                              Color="#000000" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <Button x:Name="GalleryInstallButton"
+                                    Content="Install"
+                                    Style="{StaticResource AccentRowActionButtonStyle}"
+                                    Click="InstallGalleryExtension_Click" />
+                            <Button x:Name="GalleryOpenPageButton"
+                                    Content="Open page"
+                                    Style="{StaticResource RowActionButtonStyle}"
+                                    Click="OpenGalleryPage_Click" />
                         </StackPanel>
                     </Border>
                 </Popup>

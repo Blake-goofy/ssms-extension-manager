@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private readonly ExtensionInstaller _installer;
     private readonly GitHubReleaseUpdateChecker _updateChecker;
     private Point _pendingRowActionsPoint;
+    private Point _pendingGalleryActionsPoint;
     private AppUpdateCheckResult? _applicationUpdateResult;
     private InstanceRow? _selectedInstance;
     private NavigationView _currentView = NavigationView.Manage;
@@ -58,6 +59,7 @@ public partial class MainWindow : Window
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
     private string _manageViewMode = AppSettings.ManageViewModeTiles;
+    private string _browseViewMode = AppSettings.ManageViewModeTiles;
     private string? _preferredInstanceId;
     private bool _galleryLoaded;
     private bool _galleryCatalogLoaded;
@@ -77,8 +79,11 @@ public partial class MainWindow : Window
         ExtensionsGrid.ItemsSource = _extensions;
         ManageTilesListBox.ItemsSource = _extensions;
         GalleryListBox.ItemsSource = _galleryExtensions;
+        GalleryGrid.ItemsSource = _galleryExtensions;
+        UpdateManageSearchPlaceholderVisibility();
         UpdateGallerySearchPlaceholderVisibility();
         ApplyManageViewMode();
+        ApplyBrowseViewMode();
         UpdateSelectionActionState();
         Title = $"SSMS Extension Manager {AppBuildInfo.Version}";
     }
@@ -89,10 +94,12 @@ public partial class MainWindow : Window
         _showMicrosoftExtensions = settings.ShowMicrosoftExtensions;
         _darkTheme = settings.DarkTheme;
         _checkForApplicationUpdates = settings.CheckForApplicationUpdates;
-        _manageViewMode = NormalizeManageViewMode(settings.ManageViewMode);
+        _manageViewMode = NormalizeViewMode(settings.ManageViewMode);
+        _browseViewMode = NormalizeViewMode(settings.BrowseViewMode);
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
         ThemeManager.Apply(_darkTheme);
         ApplyManageViewMode();
+        ApplyBrowseViewMode();
         _isInitializingSettingsControls = true;
         ShowMicrosoftExtensionsCheckBox.IsChecked = _showMicrosoftExtensions;
         DarkThemeCheckBox.IsChecked = _darkTheme;
@@ -121,6 +128,7 @@ public partial class MainWindow : Window
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         CloseRowActionsPopup();
+        CloseGalleryActionsPopup();
         CloseInstanceDropDownIfNeeded(e);
     }
 
@@ -622,6 +630,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ConfigureGalleryActionsPopup(GalleryExtensionRow? row)
+    {
+        GalleryActionsPopup.DataContext = row;
+        GalleryInstallButton.DataContext = row;
+        GalleryOpenPageButton.DataContext = row;
+        GalleryInstallButton.IsEnabled = row?.CanInstall == true;
+        GalleryOpenPageButton.IsEnabled = row?.HasPageUri == true;
+    }
+
+    private void CloseGalleryActionsPopup()
+    {
+        if (GalleryActionsPopup is not null)
+        {
+            GalleryActionsPopup.IsOpen = false;
+        }
+    }
+
     private async void ManageTilesViewButton_Click(object sender, RoutedEventArgs e)
     {
         SetManageViewMode(AppSettings.ManageViewModeTiles);
@@ -632,6 +657,98 @@ public partial class MainWindow : Window
     {
         SetManageViewMode(AppSettings.ManageViewModeList);
         await SaveSettingsAsync();
+    }
+
+    private async void BrowseTilesViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetBrowseViewMode(AppSettings.ManageViewModeTiles);
+        await SaveSettingsAsync();
+    }
+
+    private async void BrowseListViewButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetBrowseViewMode(AppSettings.ManageViewModeList);
+        await SaveSettingsAsync();
+    }
+
+    private void GalleryListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        ListBoxItem? item = FindParent<ListBoxItem>(source);
+        if (item?.DataContext is not GalleryExtensionRow row)
+        {
+            GalleryListBox.SelectedItem = null;
+            CloseGalleryActionsPopup();
+            e.Handled = true;
+            return;
+        }
+
+        GalleryListBox.SelectedItem = row;
+        ConfigureGalleryActionsPopup(row);
+        _pendingGalleryActionsPoint = e.GetPosition(BrowseView);
+        e.Handled = true;
+    }
+
+    private void GalleryListBox_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (GalleryListBox.SelectedItem is not GalleryExtensionRow)
+        {
+            return;
+        }
+
+        ShowGalleryActionsPopup();
+        e.Handled = true;
+    }
+
+    private void GalleryGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        if (FindParent<DataGridColumnHeader>(source) is not null)
+        {
+            return;
+        }
+
+        DataGridRow? row = FindParent<DataGridRow>(source);
+        if (row?.Item is not GalleryExtensionRow galleryRow)
+        {
+            GalleryGrid.SelectedItem = null;
+            CloseGalleryActionsPopup();
+            e.Handled = true;
+            return;
+        }
+
+        GalleryGrid.SelectedItem = galleryRow;
+        ConfigureGalleryActionsPopup(galleryRow);
+        _pendingGalleryActionsPoint = e.GetPosition(BrowseView);
+        e.Handled = true;
+    }
+
+    private void GalleryGrid_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (GalleryGrid.SelectedItem is not GalleryExtensionRow)
+        {
+            return;
+        }
+
+        ShowGalleryActionsPopup();
+        e.Handled = true;
+    }
+
+    private void ShowGalleryActionsPopup()
+    {
+        CloseRowActionsPopup();
+        GalleryActionsPopup.HorizontalOffset = _pendingGalleryActionsPoint.X;
+        GalleryActionsPopup.VerticalOffset = _pendingGalleryActionsPoint.Y;
+        GalleryActionsPopup.IsOpen = false;
+        GalleryActionsPopup.IsOpen = true;
     }
 
     private void ExtensionTileActions_Click(object sender, RoutedEventArgs e)
@@ -829,7 +946,7 @@ public partial class MainWindow : Window
 
             string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id;
             _allGalleryExtensions.Clear();
-            _allGalleryExtensions.AddRange(extensions.Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension.Id))));
+            _allGalleryExtensions.AddRange(extensions.Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension))));
             await LoadGalleryIconsAsync(_allGalleryExtensions);
             _galleryLoaded = true;
             ApplyGalleryFilter(selectedId);
@@ -881,6 +998,7 @@ public partial class MainWindow : Window
 
         string query = GallerySearchTextBox.Text.Trim();
         List<GalleryExtensionRow> rows = _allGalleryExtensions
+            .Where(row => !row.IsInstalled)
             .Where(row => string.IsNullOrWhiteSpace(query)
                 || row.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || row.AuthorText.Contains(query, StringComparison.OrdinalIgnoreCase)
@@ -911,17 +1029,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool IsGalleryExtensionInstalled(string id)
-        => _allExtensions.Any(row => row.IsInstalled && string.Equals(row.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
+    private bool IsGalleryExtensionInstalled(GalleryExtension galleryExtension)
+        => _allExtensions.Any(row => row.IsInstalled && GalleryExtensionMatcher.IsMatch(row.Manifest, galleryExtension));
 
     private void RefreshGalleryInstallStates()
     {
+        string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id
+            ?? (GalleryGrid.SelectedItem as GalleryExtensionRow)?.Id;
+
         foreach (GalleryExtensionRow row in _allGalleryExtensions)
         {
-            row.IsInstalled = IsGalleryExtensionInstalled(row.Id);
+            row.IsInstalled = IsGalleryExtensionInstalled(row.Extension);
         }
 
         GalleryListBox.Items.Refresh();
+        GalleryGrid.Items.Refresh();
+        ApplyGalleryFilter(selectedId);
     }
 
     private async Task InstallGalleryExtensionAsync(GalleryExtensionRow row)
@@ -1005,7 +1128,6 @@ public partial class MainWindow : Window
             }
 
             RefreshGalleryInstallStates();
-            ApplyGalleryFilter(row.Id);
         }, allowCancel: true);
     }
 
@@ -1202,8 +1324,17 @@ public partial class MainWindow : Window
 
     private void ApplyExtensionFilter()
     {
+        string query = ManageSearchTextBox?.Text.Trim() ?? string.Empty;
+        List<ExtensionRow> selectedRows = GetSelectedExtensionRows();
         List<ExtensionRow> visibleRows = _allExtensions
             .Where(row => _showMicrosoftExtensions || !row.IsMicrosoftPublisher)
+            .Where(row => string.IsNullOrWhiteSpace(query)
+                || row.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Publisher.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.Status.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.VersionText.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || row.UpdateSourceText.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderBy(row => row.IsInstalled ? 0 : 1)
             .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -1213,6 +1344,8 @@ public partial class MainWindow : Window
         {
             _extensions.Add(row);
         }
+
+        SyncManageSelection(selectedRows.Where(_extensions.Contains));
 
         UpdateSelectionActionState();
         UpdateFooterText();
@@ -1671,10 +1804,17 @@ public partial class MainWindow : Window
         ApplyGalleryFilter();
     }
 
+    private void ManageSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateManageSearchPlaceholderVisibility();
+        ApplyExtensionFilter();
+    }
+
     private async void InstallGalleryExtension_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { DataContext: GalleryExtensionRow row })
         {
+            CloseGalleryActionsPopup();
             await InstallGalleryExtensionAsync(row);
         }
     }
@@ -1689,6 +1829,7 @@ public partial class MainWindow : Window
 
     private void OpenGalleryPage_Click(object sender, RoutedEventArgs e)
     {
+        CloseGalleryActionsPopup();
         if (sender is not Button { DataContext: GalleryExtensionRow { PageUri: { } pageUri } })
         {
             return;
@@ -1716,8 +1857,14 @@ public partial class MainWindow : Window
 
     private void SetManageViewMode(string mode)
     {
-        _manageViewMode = NormalizeManageViewMode(mode);
+        _manageViewMode = NormalizeViewMode(mode);
         ApplyManageViewMode();
+    }
+
+    private void SetBrowseViewMode(string mode)
+    {
+        _browseViewMode = NormalizeViewMode(mode);
+        ApplyBrowseViewMode();
     }
 
     private void ApplyManageViewMode()
@@ -1735,7 +1882,21 @@ public partial class MainWindow : Window
         UpdateSelectionActionState();
     }
 
-    private static string NormalizeManageViewMode(string? mode)
+    private void ApplyBrowseViewMode()
+    {
+        if (GalleryListBox is null)
+        {
+            return;
+        }
+
+        bool tileView = _browseViewMode == AppSettings.ManageViewModeTiles;
+        GalleryListBox.Visibility = tileView ? Visibility.Visible : Visibility.Collapsed;
+        GalleryGrid.Visibility = tileView ? Visibility.Collapsed : Visibility.Visible;
+        BrowseTilesViewButton.Tag = tileView ? "Active" : null;
+        BrowseListViewButton.Tag = tileView ? null : "Active";
+    }
+
+    private static string NormalizeViewMode(string? mode)
         => string.Equals(mode, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
             ? AppSettings.ManageViewModeList
             : AppSettings.ManageViewModeTiles;
@@ -1925,7 +2086,8 @@ public partial class MainWindow : Window
         DarkThemeCheckBox?.IsChecked ?? _darkTheme,
         CaptureWindowPlacement(),
         CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
-        _manageViewMode);
+        _manageViewMode,
+        _browseViewMode);
 
     private WindowPlacementSettings CaptureWindowPlacement()
     {
@@ -1986,6 +2148,18 @@ public partial class MainWindow : Window
             : Visibility.Collapsed;
     }
 
+    private void UpdateManageSearchPlaceholderVisibility()
+    {
+        if (ManageSearchPlaceholderText is null || ManageSearchTextBox is null)
+        {
+            return;
+        }
+
+        ManageSearchPlaceholderText.Visibility = string.IsNullOrWhiteSpace(ManageSearchTextBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private static double NormalizeWindowSetting(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }
 
@@ -1999,12 +2173,28 @@ public sealed class InstanceRow(SsmsInstance instance)
 public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled) : INotifyPropertyChanged
 {
     private ImageSource? _iconSource;
+    private bool _isInstalled = isInstalled;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public GalleryExtension Extension { get; } = extension;
 
-    public bool IsInstalled { get; set; } = isInstalled;
+    public bool IsInstalled
+    {
+        get => _isInstalled;
+        set
+        {
+            if (_isInstalled == value)
+            {
+                return;
+            }
+
+            _isInstalled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanInstall));
+            OnPropertyChanged(nameof(InstallButtonText));
+        }
+    }
 
     public string Id => Extension.Id;
 

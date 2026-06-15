@@ -46,7 +46,8 @@ public sealed class AppSettingsStore
     {
         settings = settings with
         {
-            ManageViewMode = NormalizeManageViewMode(settings.ManageViewMode)
+            ManageViewMode = NormalizeViewMode(settings.ManageViewMode),
+            BrowseViewMode = NormalizeViewMode(settings.BrowseViewMode)
         };
 
         if (settings.WindowPlacement is not { } placement)
@@ -68,7 +69,7 @@ public sealed class AppSettingsStore
 
     private static double NormalizeDouble(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
-    private static string NormalizeManageViewMode(string? value)
+    private static string NormalizeViewMode(string? value)
         => string.Equals(value, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
             ? AppSettings.ManageViewModeList
             : AppSettings.ManageViewModeTiles;

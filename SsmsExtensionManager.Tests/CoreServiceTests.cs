@@ -169,6 +169,28 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public void GalleryExtensionMatcher_IsMatch_RejectsDifferentPublisherWithSameIdAndName()
+    {
+        var manifest = new VsixManifest("SqlFormatter.Shared", "1.0.0", "Microsoft", "SQL Formatter", null, null, null);
+        GalleryExtension galleryExtension = CreateGalleryExtension("SqlFormatter.Shared", "SQL Formatter", "Mads Kristensen");
+
+        bool isMatch = GalleryExtensionMatcher.IsMatch(manifest, galleryExtension);
+
+        Assert.False(isMatch);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_IsMatch_AcceptsSameIdNameAndPublisher()
+    {
+        var manifest = new VsixManifest("Mads.SqlFormatter", "1.0.0", "Mads Kristensen", "SQL Formatter", null, null, null);
+        GalleryExtension galleryExtension = CreateGalleryExtension("Mads.SqlFormatter", "SQL Formatter", "Mads Kristensen");
+
+        bool isMatch = GalleryExtensionMatcher.IsMatch(manifest, galleryExtension);
+
+        Assert.True(isMatch);
+    }
+
+    [Fact]
     public void GalleryExtensionMatcher_RemovesStaleGallerySourceWithoutMatch()
     {
         UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://ssmsgallery.azurewebsites.net/extensions/SqlFormatter/extension.vsix");
@@ -286,6 +308,7 @@ public sealed class CoreServiceTests
         Assert.Equal(720, loaded.WindowPlacement.Height);
         Assert.True(loaded.WindowPlacement.IsMaximized);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
+        Assert.Equal(AppSettings.ManageViewModeTiles, loaded.BrowseViewMode);
     }
 
     [Fact]
@@ -308,6 +331,7 @@ public sealed class CoreServiceTests
         Assert.False(loaded.DarkTheme);
         Assert.True(loaded.CheckForApplicationUpdates);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
+        Assert.Equal(AppSettings.ManageViewModeTiles, loaded.BrowseViewMode);
         Assert.Null(loaded.WindowPlacement);
     }
 
@@ -347,7 +371,7 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
-    public async Task AppSettingsStore_SavesManageViewMode()
+    public async Task AppSettingsStore_SavesViewModes()
     {
         string tempRoot = CreateTempRoot();
         AppSettingsStore store = new(Path.Combine(tempRoot, "settings.json"));
@@ -357,12 +381,14 @@ public sealed class CoreServiceTests
             false,
             null,
             true,
+            AppSettings.ManageViewModeList,
             AppSettings.ManageViewModeList);
 
         await store.SaveAsync(settings);
         AppSettings loaded = await store.LoadAsync();
 
         Assert.Equal(AppSettings.ManageViewModeList, loaded.ManageViewMode);
+        Assert.Equal(AppSettings.ManageViewModeList, loaded.BrowseViewMode);
     }
 
     [Fact]

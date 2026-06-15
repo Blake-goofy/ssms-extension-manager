@@ -6,6 +6,12 @@ public static class GalleryExtensionMatcher
 {
     private const string GalleryHost = "ssmsgallery.azurewebsites.net";
 
+    public static bool IsMatch(VsixManifest manifest, GalleryExtension galleryExtension)
+    {
+        return string.Equals(manifest.Id, galleryExtension.Id, StringComparison.OrdinalIgnoreCase)
+            && IsCompatible(manifest, galleryExtension);
+    }
+
     public static GalleryExtension? MatchForManifest(VsixManifest manifest, IReadOnlyDictionary<string, GalleryExtension> galleryById)
     {
         if (!galleryById.TryGetValue(manifest.Id, out GalleryExtension? galleryExtension))
@@ -13,7 +19,7 @@ public static class GalleryExtensionMatcher
             return null;
         }
 
-        return IsCompatible(manifest, galleryExtension)
+        return IsMatch(manifest, galleryExtension)
             ? galleryExtension
             : null;
     }
