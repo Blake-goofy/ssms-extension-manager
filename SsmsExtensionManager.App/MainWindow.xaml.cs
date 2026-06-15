@@ -1082,8 +1082,12 @@ public partial class MainWindow : Window
                 DateTimeOffset lastSeenAt = DateTimeOffset.UtcNow;
                 recordsById.TryGetValue(extension.Manifest.Id, out ManagedExtensionRecord? record);
                 previousRowsById.TryGetValue(extension.Manifest.Id, out ExtensionRow? previousRow);
-                galleryById.TryGetValue(extension.Manifest.Id, out GalleryExtension? galleryExtension);
-                UpdateSource? source = extension.UpdateSource ?? record?.UpdateSource ?? InferUpdateSource(extension.Manifest) ?? InferUpdateSource(galleryExtension);
+                GalleryExtension? galleryExtension = GalleryExtensionMatcher.MatchForManifest(extension.Manifest, galleryById);
+                UpdateSource? extensionSource = GalleryExtensionMatcher.KeepCompatibleSource(extension.UpdateSource, galleryExtension);
+                UpdateSource? recordSource = GalleryExtensionMatcher.KeepCompatibleSource(record?.UpdateSource, galleryExtension);
+                UpdateSource? source = extensionSource ?? recordSource ?? InferUpdateSource(extension.Manifest) ?? InferUpdateSource(galleryExtension);
+                bool removedStaleGallerySource = GalleryExtensionMatcher.IsGallerySource(extension.UpdateSource) && extensionSource is null;
+                bool removedStaleRecordGallerySource = GalleryExtensionMatcher.IsGallerySource(record?.UpdateSource) && recordSource is null;
                 string? normalizedInstalledVersionOverride = NormalizeInstalledVersionOverride(record?.InstalledVersionOverride, extension.Manifest.Version);
                 InstalledExtension current = extension with
                 {
@@ -1118,7 +1122,15 @@ public partial class MainWindow : Window
                 DateTimeOffset timestampAt = record?.TimestampAt ?? lastSeenAt;
                 rows.Add(new ExtensionRow(instance.Instance, current with { AvailableUpdate = effectiveUpdate }, record, effectiveUpdate, effectiveLatest, galleryExtension, lastSeenAt, timestampKind, timestampAt));
                 installedIds.Add(extension.Manifest.Id);
-                if (source is not null && extension.UpdateSource is null && record?.UpdateSource is null)
+                if (removedStaleGallerySource || removedStaleRecordGallerySource)
+                {
+                    await _sourceStore.RemoveAsync(extension.Manifest.Id);
+                    if (source is not null)
+                    {
+                        await _sourceStore.SetAsync(extension.Manifest.Id, source);
+                    }
+                }
+                else if (source is not null && extension.UpdateSource is null && record?.UpdateSource is null)
                 {
                     await _sourceStore.SetAsync(extension.Manifest.Id, source);
                 }
@@ -1137,8 +1149,10 @@ public partial class MainWindow : Window
             foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
             {
                 previousRowsById.TryGetValue(record.Manifest.Id, out ExtensionRow? previousRow);
-                galleryById.TryGetValue(record.Manifest.Id, out GalleryExtension? galleryExtension);
-                UpdateSource? source = record.UpdateSource ?? InferUpdateSource(record.Manifest) ?? InferUpdateSource(galleryExtension);
+                GalleryExtension? galleryExtension = GalleryExtensionMatcher.MatchForManifest(record.Manifest, galleryById);
+                UpdateSource? recordSource = GalleryExtensionMatcher.KeepCompatibleSource(record.UpdateSource, galleryExtension);
+                UpdateSource? source = recordSource ?? InferUpdateSource(record.Manifest) ?? InferUpdateSource(galleryExtension);
+                bool removedStaleRecordGallerySource = GalleryExtensionMatcher.IsGallerySource(record.UpdateSource) && recordSource is null;
                 bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(record.Manifest.Id);
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
                     ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, downloadableSource)
@@ -1151,9 +1165,18 @@ public partial class MainWindow : Window
                 string timestampKind = NormalizeTimestampKind(effectiveRecord.TimestampKind, isInstalled: false);
                 DateTimeOffset timestampAt = effectiveRecord.TimestampAt ?? effectiveRecord.LastSeenAt;
                 rows.Add(new ExtensionRow(instance.Instance, null, effectiveRecord, effectiveLatest, effectiveLatest, galleryExtension, effectiveRecord.LastSeenAt, timestampKind, timestampAt));
-                if (source is not null && record.UpdateSource is null)
+                if (removedStaleRecordGallerySource)
                 {
-                    await _sourceStore.SetAsync(record.Manifest.Id, source);
+                    await _sourceStore.RemoveAsync(record.Manifest.Id);
+                }
+
+                if (removedStaleRecordGallerySource || (source is not null && record.UpdateSource is null))
+                {
+                    if (source is not null)
+                    {
+                        await _sourceStore.SetAsync(record.Manifest.Id, source);
+                    }
+
                     await SaveRecordAsync(
                         record.Manifest,
                         instance.Instance,

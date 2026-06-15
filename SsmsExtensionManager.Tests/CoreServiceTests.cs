@@ -136,6 +136,70 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public void GalleryExtensionMatcher_DoesNotMatchSameIdAndNameWithDifferentPublisher()
+    {
+        var manifest = new VsixManifest("SqlFormatter.Shared", "1.0.0", "Microsoft", "SQL Formatter", null, null, null);
+        GalleryExtension galleryExtension = CreateGalleryExtension("SqlFormatter.Shared", "SQL Formatter", "Mads Kristensen");
+
+        GalleryExtension? match = GalleryExtensionMatcher.MatchForManifest(manifest, GalleryById(galleryExtension));
+
+        Assert.Null(match);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_DoesNotMatchSameIdAndPublisherWithDifferentName()
+    {
+        var manifest = new VsixManifest("Shared.Extension", "1.0.0", "Vendor A", "Extension One", null, null, null);
+        GalleryExtension galleryExtension = CreateGalleryExtension("Shared.Extension", "Extension Two", "Vendor A");
+
+        GalleryExtension? match = GalleryExtensionMatcher.MatchForManifest(manifest, GalleryById(galleryExtension));
+
+        Assert.Null(match);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_MatchesSameIdNameAndPublisher()
+    {
+        var manifest = new VsixManifest("Mads.SqlFormatter", "1.0.0", "Mads Kristensen", "SQL Formatter", null, null, null);
+        GalleryExtension galleryExtension = CreateGalleryExtension("Mads.SqlFormatter", "SQL Formatter", "Mads Kristensen");
+
+        GalleryExtension? match = GalleryExtensionMatcher.MatchForManifest(manifest, GalleryById(galleryExtension));
+
+        Assert.Same(galleryExtension, match);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_RemovesStaleGallerySourceWithoutMatch()
+    {
+        UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://ssmsgallery.azurewebsites.net/extensions/SqlFormatter/extension.vsix");
+
+        UpdateSource? kept = GalleryExtensionMatcher.KeepCompatibleSource(source, galleryExtension: null);
+
+        Assert.Null(kept);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_KeepsCompatibleGallerySource()
+    {
+        GalleryExtension galleryExtension = CreateGalleryExtension("Mads.SqlFormatter", "SQL Formatter", "Mads Kristensen");
+        UpdateSource source = new(UpdateSourceType.DirectVsixUrl, galleryExtension.PackageUri.ToString());
+
+        UpdateSource? kept = GalleryExtensionMatcher.KeepCompatibleSource(source, galleryExtension);
+
+        Assert.Same(source, kept);
+    }
+
+    [Fact]
+    public void GalleryExtensionMatcher_KeepsNonGallerySourceWithoutMatch()
+    {
+        UpdateSource source = new(UpdateSourceType.GitHubRelease, "https://github.com/owner/repo");
+
+        UpdateSource? kept = GalleryExtensionMatcher.KeepCompatibleSource(source, galleryExtension: null);
+
+        Assert.Same(source, kept);
+    }
+
+    [Fact]
     public async Task GitHubReleaseUpdateChecker_ReadsLatestVersionFromDirectVsixUrl()
     {
         string tempRoot = CreateTempRoot();
@@ -340,6 +404,25 @@ public sealed class CoreServiceTests
         Directory.CreateDirectory(path);
         return path;
     }
+
+    private static GalleryExtension CreateGalleryExtension(string id, string displayName, string author)
+        => new(
+            id,
+            displayName,
+            "Gallery summary.",
+            author,
+            "1.0.0",
+            null,
+            new Uri($"https://ssmsgallery.azurewebsites.net/extensions/{id}/extension.vsix"),
+            null,
+            null,
+            null);
+
+    private static Dictionary<string, GalleryExtension> GalleryById(GalleryExtension galleryExtension)
+        => new(StringComparer.OrdinalIgnoreCase)
+        {
+            [galleryExtension.Id] = galleryExtension
+        };
 
     private static void CreateVsix(string path, string id, string version, string publisher, string displayName)
     {
