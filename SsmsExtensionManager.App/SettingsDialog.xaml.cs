@@ -10,6 +10,7 @@ public partial class SettingsDialog : Window
     public SettingsDialog(ObservableCollection<InstanceRow> instances, InstanceRow? selectedInstance, bool showMicrosoftExtensions, bool darkTheme)
     {
         InitializeComponent();
+        ThemeManager.RegisterWindow(this);
         InstanceListBox.ItemsSource = instances;
         InstanceListBox.SelectedItem = selectedInstance ?? instances.FirstOrDefault();
         InstanceDropDownButton.IsEnabled = instances.Count > 0;

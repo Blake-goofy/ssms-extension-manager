@@ -71,6 +71,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ThemeManager.RegisterWindow(this);
         _assetResolver = new ExtensionAssetResolver(_manifestReader);
         _scanner = new InstalledExtensionScanner(_manifestReader, _sourceStore);
         _installer = new ExtensionInstaller(_assetResolver);

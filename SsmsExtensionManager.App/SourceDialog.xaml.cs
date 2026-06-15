@@ -15,6 +15,7 @@ public partial class SourceDialog : Window
     public SourceDialog(string initialUri)
     {
         InitializeComponent();
+        ThemeManager.RegisterWindow(this);
         SourceUriTextBox.Text = GitHubRepository.TryParse(initialUri, out GitHubRepository repository)
             ? repository.ToString()
             : initialUri;

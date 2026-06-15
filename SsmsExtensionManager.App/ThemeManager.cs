@@ -1,12 +1,25 @@
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace SsmsExtensionManager.App;
 
 internal static class ThemeManager
 {
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkModeBefore20h1 = 19;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
+    private const uint SwpNoOwnerZOrder = 0x0200;
+    private static bool _darkTheme;
+
     public static void Apply(bool darkTheme)
     {
+        _darkTheme = darkTheme;
         ResourceDictionary resources = Application.Current.Resources;
         ThemePalette palette = darkTheme ? ThemePalette.Dark : ThemePalette.Light;
 
@@ -32,12 +45,65 @@ internal static class ThemeManager
         SetBrush(resources, "PrimaryActionHoverBrush", palette.PrimaryActionHover);
         SetBrush(resources, "PrimaryActionPressedBrush", palette.PrimaryActionPressed);
         SetBrush(resources, "PrimaryActionForegroundBrush", palette.PrimaryActionForeground);
+
+        foreach (Window window in Application.Current.Windows)
+        {
+            ApplyWindowChrome(window);
+        }
+    }
+
+    public static void RegisterWindow(Window window)
+    {
+        window.SourceInitialized += (_, _) => ApplyWindowChrome(window);
+        window.Loaded += (_, _) => ApplyWindowChrome(window);
     }
 
     private static void SetBrush(ResourceDictionary resources, object key, Color color)
     {
         resources[key] = new SolidColorBrush(color);
     }
+
+    private static void ApplyWindowChrome(Window window)
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+        {
+            return;
+        }
+
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        int enabled = _darkTheme ? 1 : 0;
+        if (DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref enabled, sizeof(int)) != 0)
+        {
+            _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkModeBefore20h1, ref enabled, sizeof(int));
+        }
+
+        _ = SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate | SwpFrameChanged);
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int attributeSize);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        IntPtr hwnd,
+        IntPtr hwndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint flags);
 
     private sealed record ThemePalette(
         Color AppBackground,
