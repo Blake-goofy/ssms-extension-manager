@@ -85,13 +85,28 @@ public sealed class UpdateSourceStore
 
         await using FileStream stream = File.OpenRead(_filePath);
         Dictionary<string, UpdateSource>? sources = await JsonSerializer.DeserializeAsync<Dictionary<string, UpdateSource>>(stream, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
-        return new Dictionary<string, UpdateSource>(sources ?? [], StringComparer.OrdinalIgnoreCase);
+        return NormalizeSources(sources ?? []);
     }
 
     private async Task SaveUnlockedAsync(IReadOnlyDictionary<string, UpdateSource> sources, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
+        Dictionary<string, UpdateSource> normalizedSources = NormalizeSources(sources);
         await using FileStream stream = File.Create(_filePath);
-        await JsonSerializer.SerializeAsync(stream, sources, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
+        await JsonSerializer.SerializeAsync(stream, normalizedSources, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Dictionary<string, UpdateSource> NormalizeSources(IEnumerable<KeyValuePair<string, UpdateSource>> sources)
+    {
+        Dictionary<string, UpdateSource> normalizedSources = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string vsixId, UpdateSource source) in sources)
+        {
+            if (UpdateSourceSanitizer.Normalize(source) is { } normalizedSource)
+            {
+                normalizedSources[vsixId] = normalizedSource;
+            }
+        }
+
+        return normalizedSources;
     }
 }

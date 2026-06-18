@@ -28,14 +28,7 @@ public sealed class PackageCache
 
     public void RemoveCachedPackage(string? cachedVsixPath)
     {
-        if (string.IsNullOrWhiteSpace(cachedVsixPath))
-        {
-            return;
-        }
-
-        string fullPath = Path.GetFullPath(cachedVsixPath);
-        string fullRoot = Path.GetFullPath(_cacheRoot);
-        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+        if (!PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedVsixPath, _cacheRoot, out string fullPath))
         {
             return;
         }

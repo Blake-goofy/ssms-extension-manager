@@ -7,6 +7,8 @@ public static class AppPaths
     private const string ManagedExtensionsFileName = "managed-extensions.json";
     private const string ExtensionSourcesFileName = "extension-sources.json";
     private const string PackageCacheDirectoryName = "PackageCache";
+    private const string InstallStagingDirectoryName = ".ssms-extension-manager";
+    private const string InstallStagingPackagesDirectoryName = "install-staging";
     private const string AssetsDirectoryName = "assets";
     private const string UpdatesDirectoryName = "updates";
     private const string DownloadsDirectoryName = "downloads";
@@ -22,6 +24,11 @@ public static class AppPaths
     public static string ExtensionSourcesFilePath => Path.Combine(LocalDataRoot, ExtensionSourcesFileName);
 
     public static string PackageCacheRoot => Path.Combine(LocalDataRoot, PackageCacheDirectoryName);
+
+    public static string InstallStagingRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        InstallStagingDirectoryName,
+        InstallStagingPackagesDirectoryName);
 
     public static string TempRoot => Path.Combine(Path.GetTempPath(), AppDirectoryName);
 

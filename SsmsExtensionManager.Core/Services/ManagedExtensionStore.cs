@@ -9,11 +9,13 @@ public sealed class ManagedExtensionStore
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string _filePath;
+    private readonly string _packageCacheRoot;
     private readonly SemaphoreSlim _fileLock;
 
-    public ManagedExtensionStore(string? filePath = null)
+    public ManagedExtensionStore(string? filePath = null, string? packageCacheRoot = null)
     {
         _filePath = filePath ?? AppPaths.ManagedExtensionsFilePath;
+        _packageCacheRoot = packageCacheRoot ?? AppPaths.PackageCacheRoot;
         _fileLock = FileLocks.GetOrAdd(Path.GetFullPath(_filePath), _ => new SemaphoreSlim(1, 1));
     }
 
@@ -85,13 +87,16 @@ public sealed class ManagedExtensionStore
 
         await using FileStream stream = File.OpenRead(_filePath);
         List<ManagedExtensionRecord>? records = await JsonSerializer.DeserializeAsync<List<ManagedExtensionRecord>>(stream, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
-        return records ?? [];
+        return (records ?? [])
+            .Select(NormalizeRecord)
+            .ToList();
     }
 
     private async Task SaveUnlockedAsync(IEnumerable<ManagedExtensionRecord> records, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
         List<ManagedExtensionRecord> orderedRecords = records
+            .Select(NormalizeRecord)
             .GroupBy(RecordKey, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(record => record.LastSeenAt).First())
             .OrderBy(record => record.Manifest.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -102,4 +107,13 @@ public sealed class ManagedExtensionStore
     }
 
     public static string RecordKey(ManagedExtensionRecord record) => $"{record.SsmsInstanceId}|{record.Manifest.Id}";
+
+    private ManagedExtensionRecord NormalizeRecord(ManagedExtensionRecord record)
+        => record with
+        {
+            UpdateSource = UpdateSourceSanitizer.Normalize(record.UpdateSource),
+            CachedVsixPath = PackageCachePathPolicy.TryNormalizeCachedVsixPath(record.CachedVsixPath, _packageCacheRoot, out string normalizedCachedVsixPath)
+                ? normalizedCachedVsixPath
+                : null
+        };
 }

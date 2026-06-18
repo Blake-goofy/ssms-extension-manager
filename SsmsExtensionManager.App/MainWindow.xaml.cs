@@ -181,10 +181,10 @@ public partial class MainWindow : Window
             }
 
             ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, AppPaths.TempAssetsRoot);
-            string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
+            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, asset.FilePath, cancellationToken), cancellationToken);
             if (result.Success)
             {
+                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
                 await SaveRecordAsync(
                     instance.Instance,
                     asset.Manifest,
@@ -1359,13 +1359,12 @@ public partial class MainWindow : Window
                 return;
             }
 
-            string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
             if (!EnsureSsmsClosedForExtensionMutation("installation"))
             {
                 return;
             }
 
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
+            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, asset.FilePath, cancellationToken), cancellationToken);
             if (!result.Success)
             {
                 ShowMessage(result.Message);
@@ -1379,6 +1378,7 @@ public partial class MainWindow : Window
             }
 
             UpdateSource source = new(sourceType, row.PackageUri.ToString());
+            string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
             await _sourceStore.SetAsync(asset.Manifest.Id, source);
             await SaveRecordAsync(
                 instance.Instance,
@@ -1788,10 +1788,10 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix, cancellationToken), cancellationToken);
+                OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, asset.FilePath, cancellationToken), cancellationToken);
                 if (result.Success)
                 {
+                    string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
                     updatedCount++;
                     await SaveRecordAsync(
                         row.Instance,
@@ -1821,7 +1821,8 @@ public partial class MainWindow : Window
 
     private async Task<string?> GetReinstallPackageAsync(ExtensionRow row, CancellationToken cancellationToken)
     {
-        if (row.CachedVsixPath is { } cached && File.Exists(cached))
+        if (PackageCachePathPolicy.TryNormalizeCachedVsixPath(row.CachedVsixPath, AppPaths.PackageCacheRoot, out string cached)
+            && File.Exists(cached))
         {
             return cached;
         }
@@ -1891,6 +1892,10 @@ public partial class MainWindow : Window
         string? timestampKind = null,
         DateTimeOffset? timestampAt = null)
     {
+        cachedVsixPath = PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedVsixPath, AppPaths.PackageCacheRoot, out string normalizedCachedVsixPath)
+            ? normalizedCachedVsixPath
+            : null;
+
         await _managedStore.UpsertAsync(new ManagedExtensionRecord(
             instance.Id,
             manifest,
@@ -1934,7 +1939,10 @@ public partial class MainWindow : Window
             return NormalizeInstalledVersionOverride(record.InstalledVersionOverride, manifestVersion);
         }
 
-        if (record is not { IsInstalled: true, CachedVsixPath: { } cachedPath } || latest is null || !File.Exists(cachedPath))
+        if (record is not { IsInstalled: true, CachedVsixPath: { } cachedPath }
+            || latest is null
+            || !PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedPath, AppPaths.PackageCacheRoot, out string normalizedCachedPath)
+            || !File.Exists(normalizedCachedPath))
         {
             return null;
         }
@@ -1944,7 +1952,7 @@ public partial class MainWindow : Window
             return null;
         }
 
-        DateTimeOffset cachedTimestamp = File.GetLastWriteTimeUtc(cachedPath);
+        DateTimeOffset cachedTimestamp = File.GetLastWriteTimeUtc(normalizedCachedPath);
         return cachedTimestamp >= latest.PublishedAt.UtcDateTime.AddMinutes(-1)
             ? latest.Version
             : null;
@@ -2995,7 +3003,8 @@ public sealed class ExtensionRow(
 
     public bool CanUninstall => IsManageable && IsInstalled;
 
-    public bool HasCachedPackage => CachedVsixPath is { } cached && File.Exists(cached);
+    public bool HasCachedPackage => PackageCachePathPolicy.TryNormalizeCachedVsixPath(CachedVsixPath, AppPaths.PackageCacheRoot, out string cached)
+        && File.Exists(cached);
 
     public bool CanReinstall => IsManageable && !IsInstalled && (HasCachedPackage || UpdateSource?.Type is UpdateSourceType.GitHubRelease or UpdateSourceType.DirectVsixUrl or UpdateSourceType.DirectZipUrl);
 
