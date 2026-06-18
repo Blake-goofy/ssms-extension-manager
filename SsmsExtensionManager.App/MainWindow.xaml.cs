@@ -70,6 +70,10 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _busyCancellationTokenSource;
     private readonly AsyncLocal<int> _busyScopeDepth = new();
     private bool _isBusy;
+    private readonly SemaphoreSlim _galleryLoadSemaphore = new(1, 1);
+    private readonly SemaphoreSlim _galleryCatalogLoadSemaphore = new(1, 1);
+    private int _galleryLoadVersion;
+    private int _galleryCatalogLoadVersion;
     private int _extensionLoadVersion;
     private readonly object _settingsSaveLock = new();
     private Task _pendingSettingsSaveTask = Task.CompletedTask;
@@ -1054,39 +1058,143 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunBusyAsync("Loading gallery...", async () =>
+        await RunBusyAsync("Loading gallery...", async cancellationToken =>
         {
-            GalleryStatusText.Text = "Loading gallery...";
-            IReadOnlyList<GalleryExtension> extensions = await LoadGalleryCatalogAsync(force);
+            int loadVersion = force ? BeginGalleryLoad() : 0;
+            await _galleryLoadSemaphore.WaitAsync(cancellationToken);
+            try
+            {
+                if (_galleryLoaded && !force)
+                {
+                    return;
+                }
 
-            string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id;
-            _allGalleryExtensions.Clear();
-            _allGalleryExtensions.AddRange(extensions.Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension))));
-            await LoadGalleryIconsAsync(_allGalleryExtensions);
-            _galleryLoaded = true;
-            ApplyGalleryFilter(selectedId);
-        }, disableWindow: false);
+                if (!force)
+                {
+                    loadVersion = BeginGalleryLoad();
+                }
+                else if (!IsCurrentGalleryLoad(loadVersion))
+                {
+                    return;
+                }
+
+                string? selectedId = (GalleryListBox.SelectedItem as GalleryExtensionRow)?.Id;
+                IReadOnlyList<GalleryExtension> extensions;
+
+                try
+                {
+                    GalleryStatusText.Text = "Loading gallery...";
+                    extensions = await LoadGalleryCatalogAsync(force, cancellationToken);
+                }
+                catch
+                {
+                    if (!IsCurrentGalleryLoad(loadVersion))
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+
+                if (!IsCurrentGalleryLoad(loadVersion))
+                {
+                    return;
+                }
+
+                List<GalleryExtensionRow> rows = extensions
+                    .Select(extension => new GalleryExtensionRow(extension, IsGalleryExtensionInstalled(extension)))
+                    .ToList();
+
+                try
+                {
+                    await LoadGalleryIconsAsync(rows);
+                }
+                catch
+                {
+                    if (!IsCurrentGalleryLoad(loadVersion))
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+
+                if (!IsCurrentGalleryLoad(loadVersion))
+                {
+                    return;
+                }
+
+                _allGalleryExtensions.Clear();
+                _allGalleryExtensions.AddRange(rows);
+                _galleryLoaded = true;
+                ApplyGalleryFilter(selectedId);
+            }
+            finally
+            {
+                _galleryLoadSemaphore.Release();
+            }
+        }, disableWindow: false, allowConcurrent: true);
     }
 
-    private async Task<IReadOnlyList<GalleryExtension>> LoadGalleryCatalogAsync(bool force)
+    private async Task<IReadOnlyList<GalleryExtension>> LoadGalleryCatalogAsync(bool force, CancellationToken cancellationToken = default)
     {
         if (_galleryCatalogLoaded && !force)
         {
             return _galleryCatalogById.Values.ToList();
         }
 
-        await using Stream stream = await _httpClient.GetStreamAsync(GalleryFeedUri);
-        IReadOnlyList<GalleryExtension> extensions = _galleryFeedReader.Read(stream);
-
-        _galleryCatalogById.Clear();
-        foreach (GalleryExtension extension in extensions)
+        int loadVersion = force ? BeginGalleryCatalogLoad() : 0;
+        await _galleryCatalogLoadSemaphore.WaitAsync(cancellationToken);
+        try
         {
-            _galleryCatalogById[extension.Id] = extension;
-        }
+            if (_galleryCatalogLoaded && !force)
+            {
+                return _galleryCatalogById.Values.ToList();
+            }
 
-        _galleryCatalogLoaded = true;
-        return _galleryCatalogById.Values.ToList();
+            if (!force)
+            {
+                loadVersion = BeginGalleryCatalogLoad();
+            }
+            else if (!IsCurrentGalleryCatalogLoad(loadVersion))
+            {
+                return _galleryCatalogById.Values.ToList();
+            }
+
+            await using Stream stream = await _httpClient.GetStreamAsync(GalleryFeedUri, cancellationToken);
+            IReadOnlyList<GalleryExtension> extensions = _galleryFeedReader.Read(stream);
+
+            if (!IsCurrentGalleryCatalogLoad(loadVersion))
+            {
+                return extensions;
+            }
+
+            _galleryCatalogById.Clear();
+            foreach (GalleryExtension extension in extensions)
+            {
+                _galleryCatalogById[extension.Id] = extension;
+            }
+
+            _galleryCatalogLoaded = true;
+            return _galleryCatalogById.Values.ToList();
+        }
+        finally
+        {
+            _galleryCatalogLoadSemaphore.Release();
+        }
     }
+
+    private int BeginGalleryLoad()
+        => Interlocked.Increment(ref _galleryLoadVersion);
+
+    private bool IsCurrentGalleryLoad(int loadVersion)
+        => loadVersion == _galleryLoadVersion;
+
+    private int BeginGalleryCatalogLoad()
+        => Interlocked.Increment(ref _galleryCatalogLoadVersion);
+
+    private bool IsCurrentGalleryCatalogLoad(int loadVersion)
+        => loadVersion == _galleryCatalogLoadVersion;
 
     private async Task LoadGalleryIconsAsync(IEnumerable<GalleryExtensionRow> rows)
     {
@@ -1844,14 +1952,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private Task RunBusyAsync(string status, Func<Task> action, bool disableWindow = true)
-        => RunBusyAsync(status, _ => action(), disableWindow);
+    private Task RunBusyAsync(string status, Func<Task> action, bool disableWindow = true, bool allowConcurrent = false)
+        => RunBusyAsync(status, _ => action(), disableWindow, allowConcurrent: allowConcurrent);
 
-    private async Task RunBusyAsync(string status, Func<CancellationToken, Task> action, bool disableWindow = true, bool allowCancel = false)
+    private async Task RunBusyAsync(string status, Func<CancellationToken, Task> action, bool disableWindow = true, bool allowCancel = false, bool allowConcurrent = false)
     {
         if (_isBusy)
         {
-            if (_busyScopeDepth.Value > 0)
+            if (_busyScopeDepth.Value > 0 || allowConcurrent)
             {
                 await RunNestedBusyAsync(status, action);
             }
