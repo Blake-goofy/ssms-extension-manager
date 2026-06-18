@@ -44,7 +44,7 @@
                               StrokeThickness="1.5"
                               StrokeStartLineCap="Round"
                               StrokeEndLineCap="Round"
-                              Data="M 0 1.5 L 5 4.5 L 10 1.5" />
+                              Data="{StaticResource ChevronDownGeometry}" />
                         <TextBlock x:Name="InstanceDropDownText"
                                    TextTrimming="CharacterEllipsis" />
                     </DockPanel>
@@ -55,48 +55,15 @@
                        PlacementTarget="{Binding ElementName=InstanceDropDownButton}"
                        PopupAnimation="Fade"
                        StaysOpen="True">
-                    <Border Background="{DynamicResource PanelBackgroundBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
-                            MinWidth="{Binding ActualWidth, ElementName=InstanceDropDownButton}"
-                            MaxHeight="220"
-                            Padding="3">
+                    <Border Style="{StaticResource DropDownPopupBorderStyle}"
+                            MinWidth="{Binding ActualWidth, ElementName=InstanceDropDownButton}">
                         <ListBox x:Name="InstanceListBox"
                                  Background="{DynamicResource PanelBackgroundBrush}"
                                  BorderThickness="0"
                                  DisplayMemberPath="Display"
                                  Foreground="{DynamicResource ControlForegroundBrush}"
-                                 SelectionChanged="InstanceListBox_SelectionChanged">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="{x:Type ListBoxItem}">
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
-                                    <Setter Property="Padding" Value="8,5" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                <Border x:Name="Chrome"
-                                                        Background="{TemplateBinding Background}"
-                                                        CornerRadius="3"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
-                                                        <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                        </ListBox>
+                                 SelectionChanged="InstanceListBox_SelectionChanged"
+                                 ItemContainerStyle="{StaticResource PopupMenuListBoxItemStyle}" />
                     </Border>
                 </Popup>
             </Grid>

@@ -79,9 +79,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             StartInfo = new ProcessStartInfo
             {
                 FileName = installerPath,
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true
+                Arguments = arguments
             }
         };
 

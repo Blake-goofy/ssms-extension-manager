@@ -4,8 +4,6 @@ namespace SsmsExtensionManager.Core.Services;
 
 public static class GalleryExtensionMatcher
 {
-    private const string GalleryHost = "ssmsgallery.azurewebsites.net";
-
     public static bool IsMatch(VsixManifest manifest, GalleryExtension galleryExtension)
     {
         return string.Equals(manifest.Id, galleryExtension.Id, StringComparison.OrdinalIgnoreCase)
@@ -58,7 +56,7 @@ public static class GalleryExtensionMatcher
     public static bool IsGallerySource(UpdateSource? source)
     {
         return Uri.TryCreate(source?.Uri, UriKind.Absolute, out Uri? uri)
-            && string.Equals(uri.Host, GalleryHost, StringComparison.OrdinalIgnoreCase);
+            && string.Equals(uri.Host, GalleryConstants.Host, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsGalleryPackageSource(UpdateSource source, GalleryExtension galleryExtension)

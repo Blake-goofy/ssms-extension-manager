@@ -26,6 +26,59 @@
         <SolidColorBrush x:Key="PrimaryActionHoverBrush" Color="#1177BB" />
         <SolidColorBrush x:Key="PrimaryActionPressedBrush" Color="#0B578A" />
         <SolidColorBrush x:Key="PrimaryActionForegroundBrush" Color="#FFFFFF" />
+        <StreamGeometry x:Key="TileViewIconGeometry">M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z</StreamGeometry>
+        <StreamGeometry x:Key="ListViewIconGeometry">M2,3 L14,3 M2,8 L14,8 M2,13 L14,13</StreamGeometry>
+        <StreamGeometry x:Key="ChevronDownGeometry">M 0 1.5 L 5 4.5 L 10 1.5</StreamGeometry>
+
+        <Style x:Key="PopupMenuBorderStyle" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="10"
+                                      Direction="270"
+                                      Opacity="0.18"
+                                      ShadowDepth="2"
+                                      Color="#000000" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DropDownPopupBorderStyle" TargetType="{x:Type Border}" BasedOn="{StaticResource PopupMenuBorderStyle}">
+            <Setter Property="Effect" Value="{x:Null}" />
+            <Setter Property="MaxHeight" Value="220" />
+        </Style>
+
+        <Style x:Key="PopupMenuListBoxItemStyle" TargetType="{x:Type ListBoxItem}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource MenuItemHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource SelectionForegroundBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style TargetType="{x:Type Window}">
             <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />

@@ -68,7 +68,7 @@ public partial class MainWindow : Window
     private DateTime? _lastSettingsFileWriteTimeUtc;
     private CancellationTokenSource? _busyCancellationTokenSource;
 
-    private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
+    private static readonly Uri GalleryFeedUri = GalleryConstants.FeedUri;
     private static readonly string DefaultSsmsLaunchExecutablePath = SsmsPaths.GetDefaultExecutablePath();
 
     public MainWindow()
@@ -323,18 +323,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        MessageBoxResult confirm = MessageBox.Show(
-            this,
-            $"Uninstall {row.DisplayName}? SSMS's VSIXInstaller will handle the uninstall.",
-            "Uninstall extension",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (confirm != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
         SetCurrentView(NavigationView.Manage);
         await Dispatcher.Yield(DispatcherPriority.Background);
 
@@ -374,18 +362,6 @@ public partial class MainWindow : Window
         if (rows.Count == 0)
         {
             ShowMessage("Select one or more uninstalled extensions to remove from the list.");
-            return;
-        }
-
-        MessageBoxResult confirm = MessageBox.Show(
-            this,
-            "Remove selected uninstalled extension(s) from this list and delete cached VSIX packages?",
-            "Remove from list",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (confirm != MessageBoxResult.Yes)
-        {
             return;
         }
 
@@ -1188,18 +1164,6 @@ public partial class MainWindow : Window
         }
 
         if (row.IsInstalled)
-        {
-            return;
-        }
-
-        MessageBoxResult confirm = MessageBox.Show(
-            this,
-            $"Install {row.DisplayName} from SSMS Gallery?",
-            "Install extension",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information);
-
-        if (confirm != MessageBoxResult.Yes)
         {
             return;
         }
@@ -2598,7 +2562,7 @@ public sealed class ExtensionRow(
             return false;
         }
 
-        if (!string.Equals(uri.Host, "ssmsgallery.azurewebsites.net", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(uri.Host, GalleryConstants.Host, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

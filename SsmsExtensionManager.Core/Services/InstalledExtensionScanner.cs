@@ -18,7 +18,7 @@ public sealed class InstalledExtensionScanner(VsixManifestReader manifestReader,
                     continue;
                 }
 
-                foreach (string manifestPath in Directory.EnumerateFiles(root, "extension.vsixmanifest", SearchOption.AllDirectories))
+                foreach (string manifestPath in Directory.EnumerateFiles(root, VsixConstants.ManifestFileName, SearchOption.AllDirectories))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 

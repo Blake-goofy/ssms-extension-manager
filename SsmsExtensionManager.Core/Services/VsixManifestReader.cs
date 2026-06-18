@@ -17,8 +17,8 @@ public sealed class VsixManifestReader
     public VsixManifest ReadFromVsix(string vsixPath)
     {
         using ZipArchive archive = ZipFile.OpenRead(vsixPath);
-        ZipArchiveEntry manifestEntry = archive.GetEntry("extension.vsixmanifest")
-            ?? throw new InvalidDataException($"VSIX does not contain extension.vsixmanifest: {vsixPath}");
+        ZipArchiveEntry manifestEntry = archive.GetEntry(VsixConstants.ManifestFileName)
+            ?? throw new InvalidDataException($"VSIX does not contain {VsixConstants.ManifestFileName}: {vsixPath}");
 
         using Stream stream = manifestEntry.Open();
         return Read(stream);
@@ -26,7 +26,7 @@ public sealed class VsixManifestReader
 
     public VsixManifest ReadFromInstalledFolder(string extensionFolder)
     {
-        string manifestPath = Path.Combine(extensionFolder, "extension.vsixmanifest");
+        string manifestPath = Path.Combine(extensionFolder, VsixConstants.ManifestFileName);
         if (!File.Exists(manifestPath))
         {
             throw new FileNotFoundException("Installed extension manifest was not found.", manifestPath);
