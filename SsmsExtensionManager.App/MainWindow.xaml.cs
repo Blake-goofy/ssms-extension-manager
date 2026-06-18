@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -67,6 +68,9 @@ public partial class MainWindow : Window
     private bool _syncingManageSelection;
     private DateTime? _lastSettingsFileWriteTimeUtc;
     private CancellationTokenSource? _busyCancellationTokenSource;
+    private readonly AsyncLocal<int> _busyScopeDepth = new();
+    private bool _isBusy;
+    private int _extensionLoadVersion;
     private readonly object _settingsSaveLock = new();
     private Task _pendingSettingsSaveTask = Task.CompletedTask;
 
@@ -983,6 +987,7 @@ public partial class MainWindow : Window
 
             if (_selectedInstance is null)
             {
+                InvalidateExtensionLoads();
                 _allExtensions.Clear();
                 _extensions.Clear();
                 UpdateSelectionActionState();
@@ -1252,11 +1257,21 @@ public partial class MainWindow : Window
     {
         if (_selectedInstance is not { } instance)
         {
+            InvalidateExtensionLoads();
             return;
         }
 
+        int loadVersion = BeginExtensionLoad();
+        SsmsInstance ssmsInstance = instance.Instance;
+        ClearExtensionsForDifferentInstance(ssmsInstance);
+
         await RunBusyAsync(checkUpdates ? "Scanning extensions and checking updates..." : "Scanning extensions...", async () =>
         {
+            if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+            {
+                return;
+            }
+
             IReadOnlyList<GalleryExtension> galleryExtensions;
             try
             {
@@ -1265,6 +1280,11 @@ public partial class MainWindow : Window
             catch
             {
                 galleryExtensions = [];
+            }
+
+            if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+            {
+                return;
             }
 
             Dictionary<string, GalleryExtension> galleryById = galleryExtensions
@@ -1276,10 +1296,20 @@ public partial class MainWindow : Window
             Dictionary<string, ExtensionRow> previousRowsById = _allExtensions
                 .GroupBy(row => row.Manifest.Id, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-            IReadOnlyList<InstalledExtension> scanned = await _scanner.ScanAsync([instance.Instance]);
+            IReadOnlyList<InstalledExtension> scanned = await _scanner.ScanAsync([ssmsInstance]);
+            if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+            {
+                return;
+            }
+
             IReadOnlyList<ManagedExtensionRecord> records = await _managedStore.LoadAsync();
+            if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+            {
+                return;
+            }
+
             Dictionary<string, ManagedExtensionRecord> recordsById = records
-                .Where(record => string.Equals(record.SsmsInstanceId, instance.Instance.Id, StringComparison.OrdinalIgnoreCase))
+                .Where(record => string.Equals(record.SsmsInstanceId, ssmsInstance.Id, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(record => record.Manifest.Id, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.OrderByDescending(record => record.LastSeenAt).First(), StringComparer.OrdinalIgnoreCase);
 
@@ -1288,6 +1318,11 @@ public partial class MainWindow : Window
 
             foreach (InstalledExtension extension in scanned)
             {
+                if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                {
+                    return;
+                }
+
                 DateTimeOffset lastSeenAt = DateTimeOffset.UtcNow;
                 recordsById.TryGetValue(extension.Manifest.Id, out ManagedExtensionRecord? record);
                 previousRowsById.TryGetValue(extension.Manifest.Id, out ExtensionRow? previousRow);
@@ -1307,6 +1342,11 @@ public partial class MainWindow : Window
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
                     ? await _updateChecker.FindLatestMatchingAssetAsync(extension.Manifest, downloadableSource)
                     : GetPreservedLatestRelease(previousRow, source);
+                if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                {
+                    return;
+                }
+
                 string? installedVersionOverride = current.InstalledVersionOverride
                     ?? InferInstalledVersionOverride(record, latest, current.Manifest.Version);
                 if (installedVersionOverride is not null && !string.Equals(installedVersionOverride, current.InstalledVersionOverride, StringComparison.OrdinalIgnoreCase))
@@ -1329,22 +1369,35 @@ public partial class MainWindow : Window
 
                 string timestampKind = NormalizeTimestampKind(record?.TimestampKind, isInstalled: true);
                 DateTimeOffset timestampAt = record?.TimestampAt ?? lastSeenAt;
-                rows.Add(new ExtensionRow(instance.Instance, current with { AvailableUpdate = effectiveUpdate }, record, effectiveUpdate, effectiveLatest, galleryExtension, lastSeenAt, timestampKind, timestampAt));
+                rows.Add(new ExtensionRow(ssmsInstance, current with { AvailableUpdate = effectiveUpdate }, record, effectiveUpdate, effectiveLatest, galleryExtension, lastSeenAt, timestampKind, timestampAt));
                 installedIds.Add(extension.Manifest.Id);
                 if (removedStaleGallerySource || removedStaleRecordGallerySource)
                 {
                     await _sourceStore.RemoveAsync(extension.Manifest.Id);
+                    if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                    {
+                        return;
+                    }
+
                     if (source is not null)
                     {
                         await _sourceStore.SetAsync(extension.Manifest.Id, source);
+                        if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                        {
+                            return;
+                        }
                     }
                 }
                 else if (source is not null && extension.UpdateSource is null && record?.UpdateSource is null)
                 {
                     await _sourceStore.SetAsync(extension.Manifest.Id, source);
+                    if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                    {
+                        return;
+                    }
                 }
                 await SaveRecordAsync(
-                    instance.Instance,
+                    ssmsInstance,
                     extension.Manifest,
                     source,
                     record?.CachedVsixPath,
@@ -1357,6 +1410,11 @@ public partial class MainWindow : Window
 
             foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
             {
+                if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                {
+                    return;
+                }
+
                 previousRowsById.TryGetValue(record.Manifest.Id, out ExtensionRow? previousRow);
                 GalleryExtension? galleryExtension = GalleryExtensionMatcher.MatchForManifest(record.Manifest, galleryById);
                 UpdateSource? recordSource = GalleryExtensionMatcher.KeepCompatibleSource(record.UpdateSource, galleryExtension);
@@ -1366,6 +1424,11 @@ public partial class MainWindow : Window
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
                     ? await _updateChecker.FindLatestMatchingAssetAsync(record.Manifest, downloadableSource)
                     : GetPreservedLatestRelease(previousRow, source);
+                if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                {
+                    return;
+                }
+
                 AvailableUpdate? effectiveLatest = latest ?? InferLatestFromGallery(galleryExtension);
 
                 ManagedExtensionRecord effectiveRecord = source == record.UpdateSource
@@ -1373,10 +1436,14 @@ public partial class MainWindow : Window
                     : record with { UpdateSource = source };
                 string timestampKind = NormalizeTimestampKind(effectiveRecord.TimestampKind, isInstalled: false);
                 DateTimeOffset timestampAt = effectiveRecord.TimestampAt ?? effectiveRecord.LastSeenAt;
-                rows.Add(new ExtensionRow(instance.Instance, null, effectiveRecord, effectiveLatest, effectiveLatest, galleryExtension, effectiveRecord.LastSeenAt, timestampKind, timestampAt));
+                rows.Add(new ExtensionRow(ssmsInstance, null, effectiveRecord, effectiveLatest, effectiveLatest, galleryExtension, effectiveRecord.LastSeenAt, timestampKind, timestampAt));
                 if (removedStaleRecordGallerySource)
                 {
                     await _sourceStore.RemoveAsync(record.Manifest.Id);
+                    if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                    {
+                        return;
+                    }
                 }
 
                 if (removedStaleRecordGallerySource || (source is not null && record.UpdateSource is null))
@@ -1384,11 +1451,15 @@ public partial class MainWindow : Window
                     if (source is not null)
                     {
                         await _sourceStore.SetAsync(record.Manifest.Id, source);
+                        if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+                        {
+                            return;
+                        }
                     }
 
                     await SaveRecordAsync(
                         record.Manifest,
-                        instance.Instance,
+                        ssmsInstance,
                         source,
                         record.CachedVsixPath,
                         isInstalled: false,
@@ -1398,8 +1469,13 @@ public partial class MainWindow : Window
                 }
             }
 
-            _allExtensions.Clear();
             await LoadExtensionIconsAsync(rows);
+            if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
+            {
+                return;
+            }
+
+            _allExtensions.Clear();
             _allExtensions.AddRange(rows);
             ApplyExtensionFilter();
             if (_galleryLoaded)
@@ -1407,6 +1483,35 @@ public partial class MainWindow : Window
                 RefreshGalleryInstallStates();
             }
         }, disableWindow: disableWindow);
+    }
+
+    private int BeginExtensionLoad()
+        => Interlocked.Increment(ref _extensionLoadVersion);
+
+    private void InvalidateExtensionLoads()
+        => Interlocked.Increment(ref _extensionLoadVersion);
+
+    private bool IsCurrentExtensionLoad(int loadVersion, SsmsInstance instance)
+        => loadVersion == _extensionLoadVersion
+            && _selectedInstance is { } selected
+            && string.Equals(selected.Instance.Id, instance.Id, StringComparison.OrdinalIgnoreCase);
+
+    private void ClearExtensionsForDifferentInstance(SsmsInstance instance)
+    {
+        if (_allExtensions.Count == 0
+            || _allExtensions.All(row => string.Equals(row.Instance.Id, instance.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        _allExtensions.Clear();
+        _extensions.Clear();
+        UpdateSelectionActionState();
+        UpdateFooterText();
+        if (_galleryLoaded)
+        {
+            RefreshGalleryInstallStates();
+        }
     }
 
     private void ApplyExtensionFilter()
@@ -1744,6 +1849,17 @@ public partial class MainWindow : Window
 
     private async Task RunBusyAsync(string status, Func<CancellationToken, Task> action, bool disableWindow = true, bool allowCancel = false)
     {
+        if (_isBusy)
+        {
+            if (_busyScopeDepth.Value > 0)
+            {
+                await RunNestedBusyAsync(status, action);
+            }
+
+            return;
+        }
+
+        _isBusy = true;
         using CancellationTokenSource? cancellationTokenSource = allowCancel ? new CancellationTokenSource() : null;
         _busyCancellationTokenSource = cancellationTokenSource;
 
@@ -1759,7 +1875,7 @@ public partial class MainWindow : Window
                 SetMainInputEnabled(false);
             }
 
-            await action(cancellationTokenSource?.Token ?? CancellationToken.None);
+            await RunBusyActionAsync(action, cancellationTokenSource?.Token ?? CancellationToken.None);
         }
         catch (OperationCanceledException) when (cancellationTokenSource?.IsCancellationRequested == true)
         {
@@ -1777,10 +1893,44 @@ public partial class MainWindow : Window
             }
 
             _busyCancellationTokenSource = null;
+            _isBusy = false;
             BusyProgress.Visibility = Visibility.Collapsed;
             CancelBusyButton.Visibility = Visibility.Collapsed;
             CancelBusyButton.IsEnabled = false;
             FooterPanel.Visibility = _currentView == NavigationView.Browse ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
+    private async Task RunNestedBusyAsync(string status, Func<CancellationToken, Task> action)
+    {
+        StatusText.Text = status;
+
+        try
+        {
+            await RunBusyActionAsync(action, _busyCancellationTokenSource?.Token ?? CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (_busyCancellationTokenSource?.IsCancellationRequested == true)
+        {
+            StatusText.Text = "Operation canceled.";
+        }
+        catch (Exception ex)
+        {
+            ShowMessage(ex.Message);
+        }
+    }
+
+    private async Task RunBusyActionAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
+    {
+        int previousBusyScopeDepth = _busyScopeDepth.Value;
+        _busyScopeDepth.Value = previousBusyScopeDepth + 1;
+
+        try
+        {
+            await action(cancellationToken);
+        }
+        finally
+        {
+            _busyScopeDepth.Value = previousBusyScopeDepth;
         }
     }
 
