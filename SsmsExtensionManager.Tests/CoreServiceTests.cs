@@ -41,6 +41,60 @@ public sealed class CoreServiceTests
         Assert.Equal(expected, VersionComparer.ExtractVersionText(input));
     }
 
+    [Fact]
+    public void ExtensionInstaller_InstallArgumentsUseQuietInstall()
+    {
+        string arguments = ExtensionInstaller.BuildInstallArguments(@"C:\Temp\Sample Extension.vsix");
+
+        Assert.Contains("/quiet", arguments);
+        Assert.DoesNotContain("/f", arguments);
+        Assert.Contains("\"C:\\Temp\\Sample Extension.vsix\"", arguments);
+    }
+
+    [Fact]
+    public void ExtensionInstaller_InteractiveInstallArgumentsUseVsixPathOnly()
+    {
+        string arguments = ExtensionInstaller.BuildInteractiveInstallArguments(@"C:\Temp\Sample Extension.vsix");
+
+        Assert.Equal("\"C:\\Temp\\Sample Extension.vsix\"", arguments);
+    }
+
+    [Fact]
+    public void ExtensionInstaller_DetectsAlreadyInstalledVsixFailure()
+    {
+        const string logText = "Microsoft.VisualStudio.ExtensionManager.AlreadyInstalledException: This extension is already installed to all applicable products.";
+
+        Assert.True(ExtensionInstaller.IsAlreadyInstalledFailure(1001, logText));
+    }
+
+    [Fact]
+    public void ExtensionInstaller_StagesVsixForInstallerAndCleansItUp()
+    {
+        string tempRoot = CreateTempRoot();
+        string sourcePath = Path.Combine(tempRoot, "source", "sample.vsix");
+        string stagingRoot = Path.Combine(tempRoot, "staging");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
+        CreateVsix(sourcePath, "Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension");
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        var asset = new ExtensionAsset(sourcePath, manifest, "sample.vsix");
+
+        string stagedPath;
+        string stagingDirectory;
+        using (ExtensionInstaller.StagedExtensionAsset staged = ExtensionInstaller.StageForVsixInstaller(asset, stagingRoot))
+        {
+            stagedPath = staged.Asset.FilePath;
+            stagingDirectory = staged.StagingDirectory;
+
+            Assert.NotEqual(sourcePath, stagedPath);
+            Assert.StartsWith(Path.GetFullPath(stagingRoot), Path.GetFullPath(stagedPath), StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(stagedPath));
+            Assert.Equal(asset.Manifest, staged.Asset.Manifest);
+            Assert.Equal(File.ReadAllBytes(sourcePath), File.ReadAllBytes(stagedPath));
+        }
+
+        Assert.False(Directory.Exists(stagingDirectory));
+    }
+
     [Theory]
     [InlineData("https://example.com/extensions/sample.vsix", UpdateSourceType.DirectVsixUrl)]
     [InlineData("https://example.com/releases/sample.zip?download=1", UpdateSourceType.DirectZipUrl)]
@@ -81,6 +135,7 @@ public sealed class CoreServiceTests
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "managed-extensions.json"), AppPaths.ManagedExtensionsFilePath);
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "extension-sources.json"), AppPaths.ExtensionSourcesFilePath);
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "PackageCache"), AppPaths.PackageCacheRoot);
+        Assert.EndsWith(Path.Combine(".ssms-extension-manager", "install-staging"), AppPaths.InstallStagingRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "assets"), AppPaths.TempAssetsRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "updates"), AppPaths.TempUpdatesRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "downloads"), AppPaths.TempDownloadsRoot);
@@ -160,6 +215,49 @@ public sealed class CoreServiceTests
         Assert.Equal("Sample.Extension", asset.Manifest.Id);
         Assert.Equal("2.0.0", asset.Manifest.Version);
         Assert.True(File.Exists(asset.FilePath));
+    }
+
+    [Fact]
+    public void ExtensionAssetResolver_ExtractsOnlySingleVsixFromZip()
+    {
+        string tempRoot = CreateTempRoot();
+        string vsixPath = Path.Combine(tempRoot, "sample.vsix");
+        string zipPath = Path.Combine(tempRoot, "release.zip");
+        string extractPath = Path.Combine(tempRoot, "extract");
+        CreateVsix(vsixPath, "Sample.Extension", "2.0.0", "Sample Publisher", "Sample Extension");
+
+        using (ZipArchive archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            archive.CreateEntryFromFile(vsixPath, "sample.vsix");
+            ZipArchiveEntry ignored = archive.CreateEntry("nested/ignored.txt");
+            using Stream stream = ignored.Open();
+            using StreamWriter writer = new(stream);
+            writer.Write("ignored");
+        }
+
+        ExtensionAssetResolver resolver = new(new VsixManifestReader());
+        _ = resolver.Resolve(zipPath, extractPath);
+
+        Assert.Empty(Directory.GetFiles(extractPath, "ignored.txt", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void ExtensionAssetResolver_RejectsZipWithTooManyEntries()
+    {
+        string tempRoot = CreateTempRoot();
+        string zipPath = Path.Combine(tempRoot, "release.zip");
+
+        using (ZipArchive archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            for (int index = 0; index < 257; index++)
+            {
+                archive.CreateEntry($"entry-{index}.txt");
+            }
+        }
+
+        ExtensionAssetResolver resolver = new(new VsixManifestReader());
+
+        Assert.Throws<InvalidDataException>(() => resolver.Resolve(zipPath, Path.Combine(tempRoot, "extract")));
     }
 
     [Fact]
@@ -648,6 +746,66 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public async Task ManagedExtensionStore_DropsCachedVsixPathOutsidePackageCache()
+    {
+        string tempRoot = CreateTempRoot();
+        string packageCacheRoot = Path.Combine(tempRoot, "PackageCache");
+        string outsidePath = Path.Combine(tempRoot, "outside.vsix");
+        ManagedExtensionStore store = new(Path.Combine(tempRoot, "managed-extensions.json"), packageCacheRoot);
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        var record = new ManagedExtensionRecord(
+            "SSMS22",
+            manifest,
+            null,
+            outsidePath,
+            false,
+            DateTimeOffset.UtcNow);
+
+        await store.UpsertAsync(record);
+        ManagedExtensionRecord saved = Assert.Single(await store.LoadAsync());
+
+        Assert.Null(saved.CachedVsixPath);
+    }
+
+    [Fact]
+    public async Task ManagedExtensionStore_NormalizesCachedVsixPathInsidePackageCache()
+    {
+        string tempRoot = CreateTempRoot();
+        string packageCacheRoot = Path.Combine(tempRoot, "PackageCache");
+        string cachedPath = Path.Combine(packageCacheRoot, "Sample.Extension", "1.0.0", "sample.vsix");
+        ManagedExtensionStore store = new(Path.Combine(tempRoot, "managed-extensions.json"), packageCacheRoot);
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        var record = new ManagedExtensionRecord(
+            "SSMS22",
+            manifest,
+            null,
+            cachedPath,
+            false,
+            DateTimeOffset.UtcNow);
+
+        await store.UpsertAsync(record);
+        ManagedExtensionRecord saved = Assert.Single(await store.LoadAsync());
+
+        Assert.Equal(Path.GetFullPath(cachedPath), saved.CachedVsixPath);
+    }
+
+    [Fact]
+    public void PackageCache_RemoveCachedPackage_IgnoresPrefixSiblingPath()
+    {
+        string tempRoot = CreateTempRoot();
+        string cacheRoot = Path.Combine(tempRoot, "PackageCache");
+        string siblingRoot = Path.Combine(tempRoot, "PackageCache-Evil");
+        string siblingPath = Path.Combine(siblingRoot, "sample.vsix");
+        Directory.CreateDirectory(siblingRoot);
+        File.WriteAllText(siblingPath, string.Empty);
+
+        PackageCache cache = new(cacheRoot);
+        cache.RemoveCachedPackage(siblingPath);
+
+        Assert.True(File.Exists(siblingPath));
+    }
+
+    [Fact]
     public async Task AppSettingsStore_SavesViewModes()
     {
         string tempRoot = CreateTempRoot();
@@ -712,6 +870,25 @@ public sealed class CoreServiceTests
 
         Assert.Null(loaded.SsmsLaunchExecutablePath);
         Assert.Equal(string.Empty, loaded.SsmsLaunchArguments);
+    }
+
+    [Fact]
+    public async Task UpdateSourceStore_StripsQueryAndFragmentFromPersistedUrls()
+    {
+        string tempRoot = CreateTempRoot();
+        string path = Path.Combine(tempRoot, "extension-sources.json");
+        UpdateSourceStore store = new(path);
+
+        await store.SetAsync(
+            "Sample.Extension",
+            new UpdateSource(UpdateSourceType.DirectZipUrl, "https://example.com/releases/sample.zip?sig=secret#fragment"));
+
+        string savedJson = await File.ReadAllTextAsync(path);
+        IReadOnlyDictionary<string, UpdateSource> loaded = await store.LoadAsync();
+
+        Assert.Equal("https://example.com/releases/sample.zip", loaded["Sample.Extension"].Uri);
+        Assert.DoesNotContain("secret", savedJson);
+        Assert.DoesNotContain("fragment", savedJson);
     }
 
     [Fact]
