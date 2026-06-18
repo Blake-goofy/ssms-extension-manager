@@ -9,10 +9,7 @@ public sealed class UpdateSourceStore
 
     public UpdateSourceStore(string? filePath = null)
     {
-        _filePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SsmsExtensionManager",
-            "extension-sources.json");
+        _filePath = filePath ?? AppPaths.ExtensionSourcesFilePath;
     }
 
     public async Task<IReadOnlyDictionary<string, UpdateSource>> LoadAsync(CancellationToken cancellationToken = default)

@@ -61,9 +61,9 @@ public sealed class VsixManifestReader
             version,
             publisher,
             string.IsNullOrWhiteSpace(displayName) ? id : displayName!,
-            EmptyToNull(FindChild(metadata, Description.LocalName)?.Value),
-            EmptyToNull(FindChild(metadata, MoreInfo.LocalName)?.Value),
-            EmptyToNull(FindChild(metadata, ReleaseNotes.LocalName)?.Value));
+            ValueNormalization.EmptyToNull(FindChild(metadata, Description.LocalName)?.Value),
+            ValueNormalization.EmptyToNull(FindChild(metadata, MoreInfo.LocalName)?.Value),
+            ValueNormalization.EmptyToNull(FindChild(metadata, ReleaseNotes.LocalName)?.Value));
     }
 
     private static XElement? FindChild(XElement element, string localName)
@@ -80,11 +80,5 @@ public sealed class VsixManifestReader
         }
 
         return value.Trim();
-    }
-
-    private static string? EmptyToNull(string? value)
-    {
-        value = value?.Trim();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

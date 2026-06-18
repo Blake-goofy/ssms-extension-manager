@@ -11,7 +11,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            asset = assetResolver.Resolve(assetPath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
+            asset = assetResolver.Resolve(assetPath, AppPaths.TempAssetsRoot);
         }
         catch (OperationCanceledException)
         {
@@ -34,7 +34,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            asset = assetResolver.Resolve(assetPath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
+            asset = assetResolver.Resolve(assetPath, AppPaths.TempAssetsRoot);
         }
         catch (OperationCanceledException)
         {
@@ -66,10 +66,10 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
 
     private static OperationResult RunVsixInstaller(SsmsInstance instance, string arguments, CancellationToken cancellationToken)
     {
-        string installerPath = Path.Combine(instance.InstallationPath, "Common7", "IDE", "VSIXInstaller.exe");
+        string installerPath = SsmsPaths.GetVsixInstallerPath(instance.InstallationPath);
         if (!File.Exists(installerPath))
         {
-            return OperationResult.Fail($"VSIXInstaller.exe was not found at {installerPath}.");
+            return OperationResult.Fail($"{SsmsPaths.VsixInstallerFileName} was not found at {installerPath}.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();

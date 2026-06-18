@@ -9,10 +9,7 @@ public sealed class AppSettingsStore
 
     public AppSettingsStore(string? filePath = null)
     {
-        _filePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SsmsExtensionManager",
-            "settings.json");
+        _filePath = filePath ?? AppPaths.SettingsFilePath;
     }
 
     public string FilePath => _filePath;
@@ -48,9 +45,9 @@ public sealed class AppSettingsStore
     {
         settings = settings with
         {
-            ManageViewMode = NormalizeViewMode(settings.ManageViewMode),
-            BrowseViewMode = NormalizeViewMode(settings.BrowseViewMode),
-            SsmsLaunchExecutablePath = EmptyToNull(settings.SsmsLaunchExecutablePath),
+            ManageViewMode = AppSettings.NormalizeViewMode(settings.ManageViewMode),
+            BrowseViewMode = AppSettings.NormalizeViewMode(settings.BrowseViewMode),
+            SsmsLaunchExecutablePath = ValueNormalization.EmptyToNull(settings.SsmsLaunchExecutablePath),
             SsmsLaunchArguments = settings.SsmsLaunchArguments ?? string.Empty
         };
 
@@ -63,24 +60,11 @@ public sealed class AppSettingsStore
         {
             WindowPlacement = placement with
             {
-                Left = NormalizeDouble(placement.Left),
-                Top = NormalizeDouble(placement.Top),
-                Width = NormalizeDouble(placement.Width),
-                Height = NormalizeDouble(placement.Height)
+                Left = ValueNormalization.RoundWindowPlacement(placement.Left),
+                Top = ValueNormalization.RoundWindowPlacement(placement.Top),
+                Width = ValueNormalization.RoundWindowPlacement(placement.Width),
+                Height = ValueNormalization.RoundWindowPlacement(placement.Height)
             }
         };
-    }
-
-    private static double NormalizeDouble(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
-
-    private static string NormalizeViewMode(string? value)
-        => string.Equals(value, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
-            ? AppSettings.ManageViewModeList
-            : AppSettings.ManageViewModeTiles;
-
-    private static string? EmptyToNull(string? value)
-    {
-        value = value?.Trim();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

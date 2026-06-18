@@ -15,6 +15,11 @@ public sealed record AppSettings(
     public const string ManageViewModeList = "List";
 
     public static AppSettings Default { get; } = new(null, false, true, null, true, ManageViewModeTiles, ManageViewModeTiles, null, "");
+
+    public static string NormalizeViewMode(string? value)
+        => string.Equals(value, ManageViewModeList, StringComparison.OrdinalIgnoreCase)
+            ? ManageViewModeList
+            : ManageViewModeTiles;
 }
 
 public sealed record WindowPlacementSettings(

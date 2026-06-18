@@ -8,10 +8,7 @@ public sealed class PackageCache
 
     public PackageCache(string? cacheRoot = null)
     {
-        _cacheRoot = cacheRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SsmsExtensionManager",
-            "PackageCache");
+        _cacheRoot = cacheRoot ?? AppPaths.PackageCacheRoot;
     }
 
     public string CacheVsix(string vsixPath, VsixManifest manifest)

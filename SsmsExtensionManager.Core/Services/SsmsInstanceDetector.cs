@@ -22,14 +22,11 @@ public sealed class SsmsInstanceDetector
             AddInstance(instances, instance.InstanceId ?? instance.InstallationPath, instance.DisplayName ?? "SQL Server Management Studio", instance.InstallationVersion, instance.InstallationPath);
         }
 
-        string defaultPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "Microsoft SQL Server Management Studio 22",
-            "Release");
+        string defaultPath = SsmsPaths.DefaultInstallationPath;
 
         if (Directory.Exists(defaultPath))
         {
-            AddInstance(instances, "SSMS22.Default", "SQL Server Management Studio 22", ReadProductVersion(defaultPath), defaultPath);
+            AddInstance(instances, SsmsPaths.DefaultInstanceId, SsmsPaths.DefaultDisplayName, ReadProductVersion(defaultPath), defaultPath);
         }
 
         return instances
@@ -44,7 +41,7 @@ public sealed class SsmsInstanceDetector
         string normalizedInstallPath = Path.GetFullPath(installationPath);
         List<string> extensionRoots = [];
 
-        string machineRoot = Path.Combine(normalizedInstallPath, "Common7", "IDE", "Extensions");
+        string machineRoot = SsmsPaths.GetMachineExtensionRoot(normalizedInstallPath);
         if (Directory.Exists(machineRoot))
         {
             extensionRoots.Add(machineRoot);
@@ -109,7 +106,7 @@ public sealed class SsmsInstanceDetector
 
     private static string? ReadProductVersion(string installationPath)
     {
-        string ssmsExe = Path.Combine(installationPath, "Common7", "IDE", "Ssms.exe");
+        string ssmsExe = SsmsPaths.GetExecutablePath(installationPath);
         return File.Exists(ssmsExe)
             ? FileVersionInfo.GetVersionInfo(ssmsExe).ProductVersion
             : null;

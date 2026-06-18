@@ -1,4 +1,3 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -57,7 +56,7 @@ public partial class SourceDialog : Window
             return;
         }
 
-        if (TryGetDirectSourceType(SourceUriTextBox.Text, out UpdateSourceType sourceType))
+        if (ExtensionPackageSource.TryGetDirectSourceType(SourceUriTextBox.Text, out UpdateSourceType sourceType))
         {
             _repository = null;
             _selectedSourceType = sourceType;
@@ -75,32 +74,6 @@ public partial class SourceDialog : Window
 
     private void UpdatePlaceholderVisibility()
     {
-        SourcePlaceholderText.Visibility = string.IsNullOrWhiteSpace(SourceUriTextBox.Text)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
-
-    private static bool TryGetDirectSourceType(string value, out UpdateSourceType sourceType)
-    {
-        sourceType = UpdateSourceType.Unknown;
-        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri? uri))
-        {
-            return false;
-        }
-
-        string extension = Path.GetExtension(uri.LocalPath);
-        if (extension.Equals(".vsix", StringComparison.OrdinalIgnoreCase))
-        {
-            sourceType = UpdateSourceType.DirectVsixUrl;
-            return true;
-        }
-
-        if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            sourceType = UpdateSourceType.DirectZipUrl;
-            return true;
-        }
-
-        return false;
+        WpfUiHelpers.UpdatePlaceholderVisibility(SourcePlaceholderText, SourceUriTextBox);
     }
 }

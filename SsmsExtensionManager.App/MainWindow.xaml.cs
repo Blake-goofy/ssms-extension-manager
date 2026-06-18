@@ -1,10 +1,8 @@
 using System.Collections;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -46,6 +44,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, GalleryExtension> _galleryCatalogById = new(StringComparer.OrdinalIgnoreCase);
     private readonly InstalledExtensionScanner _scanner;
     private readonly ExtensionAssetResolver _assetResolver;
+    private readonly ExtensionAssetDownloadService _assetDownloadService;
     private readonly ExtensionInstaller _installer;
     private readonly GitHubReleaseUpdateChecker _updateChecker;
     private Point _pendingRowActionsPoint;
@@ -70,22 +69,17 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _busyCancellationTokenSource;
 
     private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
-    private static readonly string DefaultSsmsLaunchExecutablePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        "Microsoft SQL Server Management Studio 22",
-        "Release",
-        "Common7",
-        "IDE",
-        "SSMS.exe");
+    private static readonly string DefaultSsmsLaunchExecutablePath = SsmsPaths.GetDefaultExecutablePath();
 
     public MainWindow()
     {
         InitializeComponent();
         ThemeManager.RegisterWindow(this);
         _assetResolver = new ExtensionAssetResolver(_manifestReader);
+        _assetDownloadService = new ExtensionAssetDownloadService(_httpClient, _assetResolver);
         _scanner = new InstalledExtensionScanner(_manifestReader, _sourceStore);
         _installer = new ExtensionInstaller(_assetResolver);
-        _updateChecker = new GitHubReleaseUpdateChecker(_httpClient, _assetResolver);
+        _updateChecker = new GitHubReleaseUpdateChecker(_httpClient, _assetDownloadService);
         _galleryIconLoader = new GalleryIconLoader(_httpClient);
         ExtensionsGrid.ItemsSource = _extensions;
         ManageTilesListBox.ItemsSource = _extensions;
@@ -107,8 +101,8 @@ public partial class MainWindow : Window
         _checkForApplicationUpdates = settings.CheckForApplicationUpdates;
         _ssmsLaunchExecutablePath = settings.SsmsLaunchExecutablePath;
         _ssmsLaunchArguments = settings.SsmsLaunchArguments;
-        _manageViewMode = NormalizeViewMode(settings.ManageViewMode);
-        _browseViewMode = NormalizeViewMode(settings.BrowseViewMode);
+        _manageViewMode = AppSettings.NormalizeViewMode(settings.ManageViewMode);
+        _browseViewMode = AppSettings.NormalizeViewMode(settings.BrowseViewMode);
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
         UpdateLastSettingsFileWriteTime();
         ThemeManager.Apply(_darkTheme);
@@ -146,7 +140,7 @@ public partial class MainWindow : Window
     {
         CloseRowActionsPopup();
         CloseGalleryActionsPopup();
-        CloseInstanceDropDownIfNeeded(e);
+        CloseInstanceDropDownIfNeeded();
     }
 
     private async void InstallLocal_Click(object sender, RoutedEventArgs e)
@@ -178,7 +172,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
+            ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, AppPaths.TempAssetsRoot);
             string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
             OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
             if (result.Success)
@@ -265,7 +259,7 @@ public partial class MainWindow : Window
                 OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(row.Instance, packagePath, cancellationToken), cancellationToken);
                 if (result.Success)
                 {
-                    ExtensionAsset asset = _assetResolver.Resolve(packagePath, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
+                    ExtensionAsset asset = _assetResolver.Resolve(packagePath, AppPaths.TempAssetsRoot);
                     string? installedVersionOverride = row.AvailableUpdate?.Version ?? row.LatestRelease?.Version;
                     await SaveRecordAsync(
                         row.Instance,
@@ -412,10 +406,10 @@ public partial class MainWindow : Window
 
     private void LaunchSsms_Click(object sender, RoutedEventArgs e)
     {
-        string? executablePath = EmptyToNull(_ssmsLaunchExecutablePath);
+        string? executablePath = ValueNormalization.EmptyToNull(_ssmsLaunchExecutablePath);
         if (executablePath is null)
         {
-            ShowLaunchSettingsError("The SSMS executable path is not set. Open Settings to choose the SSMS.exe start location.");
+            ShowLaunchSettingsError($"The SSMS executable path is not set. Open Settings to choose the {SsmsPaths.ExecutableFileName} start location.");
             return;
         }
 
@@ -1058,7 +1052,7 @@ public partial class MainWindow : Window
 
         foreach (SsmsInstance instance in orderedInstances)
         {
-            string candidate = Path.Combine(instance.InstallationPath, "Common7", "IDE", "SSMS.exe");
+            string candidate = SsmsPaths.GetExecutablePath(instance.InstallationPath);
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -1215,66 +1209,55 @@ public partial class MainWindow : Window
 
         await RunBusyAsync($"Installing {row.DisplayName}...", async cancellationToken =>
         {
-            string downloaded = await DownloadAsync(row.PackageUri, cancellationToken);
-            string? installedManifestId = null;
-            try
+            using DownloadedExtensionAsset downloaded = await _assetDownloadService.DownloadAndResolveAsync(
+                row.PackageUri,
+                AppPaths.TempAssetsRoot,
+                cancellationToken);
+            ExtensionAsset asset = downloaded.Asset;
+            if (!string.Equals(asset.Manifest.Id, row.Id, StringComparison.OrdinalIgnoreCase))
             {
-                ExtensionAsset asset = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
-                if (!string.Equals(asset.Manifest.Id, row.Id, StringComparison.OrdinalIgnoreCase))
-                {
-                    ShowMessage($"Downloaded VSIX identity '{asset.Manifest.Id}' does not match gallery extension '{row.Id}'.");
-                    return;
-                }
-
-                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                if (!EnsureSsmsClosedForExtensionMutation("installation"))
-                {
-                    return;
-                }
-
-                OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
-                if (!result.Success)
-                {
-                    ShowMessage(result.Message);
-                    return;
-                }
-
-                UpdateSource source = new(SourceTypeFromPackageUri(row.PackageUri), row.PackageUri.ToString());
-                await _sourceStore.SetAsync(asset.Manifest.Id, source);
-                await SaveRecordAsync(
-                    instance.Instance,
-                    asset.Manifest,
-                    source,
-                    cachedVsix,
-                    isInstalled: true,
-                    installedVersionOverride: EmptyToNull(row.Version),
-                    timestampKind: ManagedExtensionRecord.InstalledTimestampKind,
-                    timestampAt: DateTimeOffset.UtcNow);
-                installedManifestId = asset.Manifest.Id;
-                GalleryStatusText.Text = result.Message;
-            }
-            finally
-            {
-                TryDelete(downloaded);
+                ShowMessage($"Downloaded VSIX identity '{asset.Manifest.Id}' does not match gallery extension '{row.Id}'.");
+                return;
             }
 
-            await LoadExtensionsAfterMutationAsync(installedManifestId is null ? null : [installedManifestId]);
-            if (installedManifestId is not null)
+            string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
+            if (!EnsureSsmsClosedForExtensionMutation("installation"))
             {
-                SelectExtensionRow(installedManifestId);
-                StatusText.Text = $"Installed {row.DisplayName}.";
+                return;
             }
+
+            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
+            if (!result.Success)
+            {
+                ShowMessage(result.Message);
+                return;
+            }
+
+            if (!ExtensionPackageSource.TryGetDirectSourceType(row.PackageUri, out UpdateSourceType sourceType))
+            {
+                ShowMessage($"Gallery extension package is not a supported VSIX or ZIP URL: {row.PackageUri}");
+                return;
+            }
+
+            UpdateSource source = new(sourceType, row.PackageUri.ToString());
+            await _sourceStore.SetAsync(asset.Manifest.Id, source);
+            await SaveRecordAsync(
+                instance.Instance,
+                asset.Manifest,
+                source,
+                cachedVsix,
+                isInstalled: true,
+                    installedVersionOverride: ValueNormalization.EmptyToNull(row.Version),
+                timestampKind: ManagedExtensionRecord.InstalledTimestampKind,
+                timestampAt: DateTimeOffset.UtcNow);
+            GalleryStatusText.Text = result.Message;
+
+            await LoadExtensionsAfterMutationAsync([asset.Manifest.Id]);
+            SelectExtensionRow(asset.Manifest.Id);
+            StatusText.Text = $"Installed {row.DisplayName}.";
 
             RefreshGalleryInstallStates();
         }, allowCancel: true);
-    }
-
-    private static UpdateSourceType SourceTypeFromPackageUri(Uri uri)
-    {
-        string extension = Path.GetExtension(uri.LocalPath);
-        return extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)
-            ? UpdateSourceType.DirectZipUrl
-            : UpdateSourceType.DirectVsixUrl;
     }
 
     private static bool IsDownloadableSource(UpdateSource? source)
@@ -1549,33 +1532,29 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                string downloaded = await DownloadAsync(update.AssetUri, cancellationToken);
-                try
+                using DownloadedExtensionAsset downloaded = await _assetDownloadService.DownloadAndResolveAsync(
+                    update.AssetUri,
+                    AppPaths.TempAssetsRoot,
+                    cancellationToken);
+                ExtensionAsset asset = downloaded.Asset;
+                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
+                OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix, cancellationToken), cancellationToken);
+                if (result.Success)
                 {
-                    ExtensionAsset asset = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
-                    string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-                    OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix, cancellationToken), cancellationToken);
-                    if (result.Success)
-                    {
-                        updatedCount++;
-                        await SaveRecordAsync(
-                            row.Instance,
-                            asset.Manifest,
-                            row.UpdateSource,
-                            cachedVsix,
-                            isInstalled: true,
-                            update.Version,
-                            timestampKind: ManagedExtensionRecord.UpdatedTimestampKind,
-                            timestampAt: DateTimeOffset.UtcNow);
-                    }
-                    else
-                    {
-                        ShowMessage($"{row.DisplayName}: {result.Message}");
-                    }
+                    updatedCount++;
+                    await SaveRecordAsync(
+                        row.Instance,
+                        asset.Manifest,
+                        row.UpdateSource,
+                        cachedVsix,
+                        isInstalled: true,
+                        update.Version,
+                        timestampKind: ManagedExtensionRecord.UpdatedTimestampKind,
+                        timestampAt: DateTimeOffset.UtcNow);
                 }
-                finally
+                else
                 {
-                    TryDelete(downloaded);
+                    ShowMessage($"{row.DisplayName}: {result.Message}");
                 }
             }
 
@@ -1607,21 +1586,17 @@ public partial class MainWindow : Window
             return null;
         }
 
-        string downloaded = await DownloadAsync(asset.AssetUri, cancellationToken);
-        try
+        using DownloadedExtensionAsset downloaded = await _assetDownloadService.DownloadAndResolveAsync(
+            asset.AssetUri,
+            AppPaths.TempAssetsRoot,
+            cancellationToken);
+        ExtensionAsset resolved = downloaded.Asset;
+        if (!string.Equals(resolved.Manifest.Id, row.Manifest.Id, StringComparison.OrdinalIgnoreCase))
         {
-            ExtensionAsset resolved = _assetResolver.Resolve(downloaded, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "assets"));
-            if (!string.Equals(resolved.Manifest.Id, row.Manifest.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
+            return null;
+        }
 
-            return _packageCache.CacheVsix(resolved.FilePath, resolved.Manifest);
-        }
-        finally
-        {
-            TryDelete(downloaded);
-        }
+        return _packageCache.CacheVsix(resolved.FilePath, resolved.Manifest);
     }
 
     private async Task SaveRecordAsync(
@@ -1670,9 +1645,9 @@ public partial class MainWindow : Window
     }
 
     private static UpdateSource? InferUpdateSource(GalleryExtension? galleryExtension)
-        => galleryExtension is null
+        => galleryExtension is null || !ExtensionPackageSource.TryGetDirectSourceType(galleryExtension.PackageUri, out UpdateSourceType sourceType)
             ? null
-            : new UpdateSource(SourceTypeFromPackageUri(galleryExtension.PackageUri), galleryExtension.PackageUri.ToString());
+            : new UpdateSource(sourceType, galleryExtension.PackageUri.ToString());
 
     private static AvailableUpdate? InferLatestFromGallery(GalleryExtension? galleryExtension)
         => galleryExtension is null || string.IsNullOrWhiteSpace(galleryExtension.Version)
@@ -1738,26 +1713,6 @@ public partial class MainWindow : Window
         return isInstalled
             ? ManagedExtensionRecord.DetectedTimestampKind
             : ManagedExtensionRecord.UninstalledTimestampKind;
-    }
-
-    private async Task<string> DownloadAsync(Uri uri, CancellationToken cancellationToken)
-    {
-        string targetRoot = Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads");
-        Directory.CreateDirectory(targetRoot);
-        string targetPath = Path.Combine(targetRoot, $"{Guid.NewGuid():N}{Path.GetExtension(uri.LocalPath)}");
-
-        try
-        {
-            await using Stream input = await _httpClient.GetStreamAsync(uri, cancellationToken);
-            await using FileStream output = File.Create(targetPath);
-            await input.CopyToAsync(output, cancellationToken);
-            return targetPath;
-        }
-        catch
-        {
-            TryDelete(targetPath);
-            throw;
-        }
     }
 
     private bool EnsureSsmsClosedForExtensionMutation(string operationName)
@@ -1985,18 +1940,6 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch
-        {
-            // Best effort cleanup only.
-        }
-    }
-
     private async Task SaveSettingsAsync()
     {
         await _settingsStore.SaveAsync(BuildCurrentSettings());
@@ -2110,13 +2053,13 @@ public partial class MainWindow : Window
 
     private void SetManageViewMode(string mode)
     {
-        _manageViewMode = NormalizeViewMode(mode);
+        _manageViewMode = AppSettings.NormalizeViewMode(mode);
         ApplyManageViewMode();
     }
 
     private void SetBrowseViewMode(string mode)
     {
-        _browseViewMode = NormalizeViewMode(mode);
+        _browseViewMode = AppSettings.NormalizeViewMode(mode);
         ApplyBrowseViewMode();
     }
 
@@ -2148,11 +2091,6 @@ public partial class MainWindow : Window
         BrowseTilesViewButton.Tag = tileView ? "Active" : null;
         BrowseListViewButton.Tag = tileView ? null : "Active";
     }
-
-    private static string NormalizeViewMode(string? mode)
-        => string.Equals(mode, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
-            ? AppSettings.ManageViewModeList
-            : AppSettings.ManageViewModeTiles;
 
     private void ApplyNavigation()
     {
@@ -2284,7 +2222,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ssmsLaunchExecutablePath = EmptyToNull(SsmsLaunchExecutablePathTextBox.Text);
+        _ssmsLaunchExecutablePath = ValueNormalization.EmptyToNull(SsmsLaunchExecutablePathTextBox.Text);
         _ssmsLaunchArguments = SsmsLaunchArgumentsTextBox.Text;
         await SaveSettingsAsync();
 
@@ -2301,8 +2239,8 @@ public partial class MainWindow : Window
     {
         OpenFileDialog dialog = new()
         {
-            Filter = "SSMS executable (SSMS.exe)|SSMS.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
-            FileName = Path.GetFileName(_ssmsLaunchExecutablePath) ?? "SSMS.exe",
+            Filter = $"SSMS executable ({SsmsPaths.ExecutableFileName})|{SsmsPaths.ExecutableFileName}|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+            FileName = Path.GetFileName(_ssmsLaunchExecutablePath) ?? SsmsPaths.ExecutableFileName,
             Title = "Choose SSMS executable"
         };
 
@@ -2326,14 +2264,7 @@ public partial class MainWindow : Window
 
     private void UpdateSsmsLaunchArgumentsPlaceholderVisibility()
     {
-        if (SsmsLaunchArgumentsPlaceholderText is null || SsmsLaunchArgumentsTextBox is null)
-        {
-            return;
-        }
-
-        SsmsLaunchArgumentsPlaceholderText.Visibility = string.IsNullOrWhiteSpace(SsmsLaunchArgumentsTextBox.Text)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        WpfUiHelpers.UpdatePlaceholderVisibility(SsmsLaunchArgumentsPlaceholderText, SsmsLaunchArgumentsTextBox);
     }
 
     private void UpdateApplicationUpdateButton()
@@ -2376,25 +2307,9 @@ public partial class MainWindow : Window
 
     private static string EnabledDisabled(bool enabled) => enabled ? "enabled" : "disabled";
 
-    private static string? EmptyToNull(string? value)
+    private void CloseInstanceDropDownIfNeeded()
     {
-        value = value?.Trim();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
-    }
-
-    private void CloseInstanceDropDownIfNeeded(MouseButtonEventArgs e)
-    {
-        if (!InstanceDropDownPopup.IsOpen)
-        {
-            return;
-        }
-
-        if (InstanceDropDownButton.IsMouseOver || InstanceListBox.IsMouseOver)
-        {
-            return;
-        }
-
-        InstanceDropDownPopup.IsOpen = false;
+        WpfUiHelpers.ClosePopupIfClickOutside(InstanceDropDownPopup, InstanceDropDownButton, InstanceListBox);
     }
 
     private static string FormatCount(int count, string singular)
@@ -2411,7 +2326,7 @@ public partial class MainWindow : Window
         CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
         _manageViewMode,
         _browseViewMode,
-        EmptyToNull(SsmsLaunchExecutablePathTextBox?.Text) ?? _ssmsLaunchExecutablePath,
+        ValueNormalization.EmptyToNull(SsmsLaunchExecutablePathTextBox?.Text) ?? _ssmsLaunchExecutablePath,
         SsmsLaunchArgumentsTextBox?.Text ?? _ssmsLaunchArguments);
 
     private WindowPlacementSettings CaptureWindowPlacement()
@@ -2421,10 +2336,10 @@ public partial class MainWindow : Window
             : RestoreBounds;
 
         return new WindowPlacementSettings(
-            NormalizeWindowSetting(bounds.Left),
-            NormalizeWindowSetting(bounds.Top),
-            NormalizeWindowSetting(bounds.Width),
-            NormalizeWindowSetting(bounds.Height),
+            ValueNormalization.RoundWindowPlacement(bounds.Left),
+            ValueNormalization.RoundWindowPlacement(bounds.Top),
+            ValueNormalization.RoundWindowPlacement(bounds.Width),
+            ValueNormalization.RoundWindowPlacement(bounds.Height),
             WindowState == WindowState.Maximized);
     }
 
@@ -2463,29 +2378,14 @@ public partial class MainWindow : Window
 
     private void UpdateGallerySearchPlaceholderVisibility()
     {
-        if (GallerySearchPlaceholderText is null || GallerySearchTextBox is null)
-        {
-            return;
-        }
-
-        GallerySearchPlaceholderText.Visibility = string.IsNullOrWhiteSpace(GallerySearchTextBox.Text)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        WpfUiHelpers.UpdatePlaceholderVisibility(GallerySearchPlaceholderText, GallerySearchTextBox);
     }
 
     private void UpdateManageSearchPlaceholderVisibility()
     {
-        if (ManageSearchPlaceholderText is null || ManageSearchTextBox is null)
-        {
-            return;
-        }
-
-        ManageSearchPlaceholderText.Visibility = string.IsNullOrWhiteSpace(ManageSearchTextBox.Text)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        WpfUiHelpers.UpdatePlaceholderVisibility(ManageSearchPlaceholderText, ManageSearchTextBox);
     }
 
-    private static double NormalizeWindowSetting(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }
 
 public sealed class InstanceRow(SsmsInstance instance)
@@ -2495,12 +2395,9 @@ public sealed class InstanceRow(SsmsInstance instance)
     public string Display => $"{Instance.DisplayName} ({Instance.Version ?? "unknown"})";
 }
 
-public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled) : INotifyPropertyChanged
+public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInstalled) : IconRowBase
 {
-    private ImageSource? _iconSource;
     private bool _isInstalled = isInstalled;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 
     public GalleryExtension Extension { get; } = extension;
 
@@ -2525,19 +2422,13 @@ public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInsta
 
     public string DisplayName => Extension.DisplayName;
 
-    public string Summary => string.IsNullOrWhiteSpace(Extension.Summary)
-        ? "No description provided."
-        : Extension.Summary;
+    public string Summary => ExtensionDisplayText.Description(Extension.Summary);
 
-    public string AuthorText => string.IsNullOrWhiteSpace(Extension.Author)
-        ? "Unknown publisher"
-        : $"by {Extension.Author}";
+    public string AuthorText => ExtensionDisplayText.AuthorText(Extension.Author);
 
     public string Version => Extension.Version;
 
-    public string VersionText => string.IsNullOrWhiteSpace(Version)
-        ? "Version unknown"
-        : $"v{Version}";
+    public string VersionText => ExtensionDisplayText.VersionText(Version);
 
     public Uri PackageUri => Extension.PackageUri;
 
@@ -2547,34 +2438,11 @@ public sealed class GalleryExtensionRow(GalleryExtension extension, bool isInsta
 
     public Uri? IconUri => Extension.IconUri;
 
-    public ImageSource? IconSource => _iconSource;
-
     public bool CanInstall => !IsInstalled;
 
     public string InstallButtonText => IsInstalled ? "Installed" : "Install";
 
-    public string Initials
-    {
-        get
-        {
-            string[] words = DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
-        }
-    }
-
-    public void SetIconSource(ImageSource? iconSource)
-    {
-        if (ReferenceEquals(_iconSource, iconSource))
-        {
-            return;
-        }
-
-        _iconSource = iconSource;
-        OnPropertyChanged(nameof(IconSource));
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    public string Initials => ExtensionDisplayText.Initials(DisplayName);
 }
 
 public sealed class ExtensionRow(
@@ -2586,12 +2454,8 @@ public sealed class ExtensionRow(
     GalleryExtension? galleryExtension = null,
     DateTimeOffset? lastSeenAt = null,
     string? timestampKind = null,
-    DateTimeOffset? timestampAt = null) : INotifyPropertyChanged
+    DateTimeOffset? timestampAt = null) : IconRowBase
 {
-    private ImageSource? _iconSource;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
     public SsmsInstance Instance { get; } = instance;
 
     public InstalledExtension? InstalledExtension { get; } = installedExtension;
@@ -2610,15 +2474,9 @@ public sealed class ExtensionRow(
 
     public string DisplayName => Manifest.DisplayName;
 
-    public string Description => string.IsNullOrWhiteSpace(GalleryExtension?.Summary)
-        ? string.IsNullOrWhiteSpace(Manifest.Description)
-            ? "No description provided."
-            : Manifest.Description!
-        : GalleryExtension.Summary!;
+    public string Description => ExtensionDisplayText.Description(GalleryExtension?.Summary, Manifest.Description);
 
-    public string AuthorText => string.IsNullOrWhiteSpace(Publisher)
-        ? "Unknown publisher"
-        : $"by {Publisher}";
+    public string AuthorText => ExtensionDisplayText.AuthorText(Publisher);
 
     public string Status => IsInstalled
         ? "Installed"
@@ -2631,13 +2489,13 @@ public sealed class ExtensionRow(
     public string LatestVersion => LatestRelease?.Version ?? "";
 
     public string VersionText => IsInstalled
-        ? string.IsNullOrWhiteSpace(InstalledVersion) ? "Version unknown" : $"v{InstalledVersion}"
-        : ReinstallVersion is { } reinstallVersion ? $"v{reinstallVersion}" : "Version unknown";
+        ? ExtensionDisplayText.VersionText(InstalledVersion)
+        : ExtensionDisplayText.VersionText(ReinstallVersion);
 
-    private string? ReinstallVersion => EmptyToNull(AvailableUpdate?.Version)
-        ?? EmptyToNull(LatestRelease?.Version)
-        ?? EmptyToNull(Record?.InstalledVersionOverride)
-        ?? EmptyToNull(Manifest.Version);
+    private string? ReinstallVersion => ValueNormalization.EmptyToNull(AvailableUpdate?.Version)
+        ?? ValueNormalization.EmptyToNull(LatestRelease?.Version)
+        ?? ValueNormalization.EmptyToNull(Record?.InstalledVersionOverride)
+        ?? ValueNormalization.EmptyToNull(Manifest.Version);
 
     public string TimestampText => TimestampAt is { } timestampAt
         ? timestampAt.LocalDateTime.ToString("g")
@@ -2656,8 +2514,6 @@ public sealed class ExtensionRow(
     public DateTimeOffset? TimestampAt { get; } = timestampAt ?? lastSeenAt ?? record?.TimestampAt ?? record?.LastSeenAt;
 
     public Uri? IconUri => GalleryExtension?.IconUri;
-
-    public ImageSource? IconSource => _iconSource;
 
     public string UpdateSourceText => UpdateSource?.Uri ?? (IsMicrosoftPublisher ? "Microsoft" : "Unknown");
 
@@ -2695,8 +2551,9 @@ public sealed class ExtensionRow(
     public string? InstalledVersionOverride => InstalledExtension?.InstalledVersionOverride ?? Record?.InstalledVersionOverride;
 
     private UpdateSource? InferredGalleryUpdateSource => GalleryExtension is null
+        || !ExtensionPackageSource.TryGetDirectSourceType(GalleryExtension.PackageUri, out UpdateSourceType sourceType)
         ? null
-        : new UpdateSource(GetSourceTypeFromPackageUri(GalleryExtension.PackageUri), GalleryExtension.PackageUri.ToString());
+        : new UpdateSource(sourceType, GalleryExtension.PackageUri.ToString());
 
     public Uri? OpenUri
     {
@@ -2731,28 +2588,7 @@ public sealed class ExtensionRow(
 
     public bool HasOpenUri => OpenUri is not null;
 
-    public string Initials
-    {
-        get
-        {
-            string[] words = DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
-        }
-    }
-
-    public void SetIconSource(ImageSource? iconSource)
-    {
-        if (ReferenceEquals(_iconSource, iconSource))
-        {
-            return;
-        }
-
-        _iconSource = iconSource;
-        OnPropertyChanged(nameof(IconSource));
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    public string Initials => ExtensionDisplayText.Initials(DisplayName);
 
     private static bool TryGetGalleryPageUri(string? sourceUri, out Uri? pageUri)
     {
@@ -2775,19 +2611,5 @@ public sealed class ExtensionRow(
 
         pageUri = new Uri($"{uri.Scheme}://{uri.Authority}/extension/{Uri.EscapeDataString(segments[1])}");
         return true;
-    }
-
-    private static UpdateSourceType GetSourceTypeFromPackageUri(Uri uri)
-    {
-        string extension = Path.GetExtension(uri.LocalPath);
-        return extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)
-            ? UpdateSourceType.DirectZipUrl
-            : UpdateSourceType.DirectVsixUrl;
-    }
-
-    private static string? EmptyToNull(string? value)
-    {
-        value = value?.Trim();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

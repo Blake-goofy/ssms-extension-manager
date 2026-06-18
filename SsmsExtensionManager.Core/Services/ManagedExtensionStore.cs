@@ -9,10 +9,7 @@ public sealed class ManagedExtensionStore
 
     public ManagedExtensionStore(string? filePath = null)
     {
-        _filePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SsmsExtensionManager",
-            "managed-extensions.json");
+        _filePath = filePath ?? AppPaths.ManagedExtensionsFilePath;
     }
 
     public async Task<IReadOnlyList<ManagedExtensionRecord>> LoadAsync(CancellationToken cancellationToken = default)

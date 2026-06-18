@@ -9,19 +9,19 @@ public sealed class ExtensionAssetResolver(VsixManifestReader manifestReader)
     {
         string extension = Path.GetExtension(assetPath);
 
-        if (extension.Equals(".vsix", StringComparison.OrdinalIgnoreCase))
+        if (extension.Equals(ExtensionPackageSource.VsixExtension, StringComparison.OrdinalIgnoreCase))
         {
             return new ExtensionAsset(assetPath, manifestReader.ReadFromVsix(assetPath), Path.GetFileName(assetPath));
         }
 
-        if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        if (extension.Equals(ExtensionPackageSource.ZipExtension, StringComparison.OrdinalIgnoreCase))
         {
             Directory.CreateDirectory(extractionRoot);
             string extractPath = Path.Combine(extractionRoot, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(extractPath);
             ZipFile.ExtractToDirectory(assetPath, extractPath);
 
-            string[] vsixFiles = Directory.GetFiles(extractPath, "*.vsix", SearchOption.AllDirectories);
+            string[] vsixFiles = Directory.GetFiles(extractPath, $"*{ExtensionPackageSource.VsixExtension}", SearchOption.AllDirectories);
             if (vsixFiles.Length == 0)
             {
                 throw new InvalidDataException("ZIP file does not contain a VSIX.");

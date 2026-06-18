@@ -4,7 +4,7 @@ using SsmsExtensionManager.Core.Models;
 
 namespace SsmsExtensionManager.Core.Services;
 
-public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionAssetResolver assetResolver)
+public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionAssetDownloadService assetDownloadService)
 {
     public async Task<AvailableUpdate?> CheckAsync(InstalledExtension extension, CancellationToken cancellationToken = default)
     {
@@ -53,29 +53,24 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
 
         foreach (GitHubAsset asset in release.Assets.Where(asset => IsSupportedAsset(asset.Name)))
         {
-            DownloadedAsset downloaded = await DownloadAsync(asset.BrowserDownloadUrl, cancellationToken).ConfigureAwait(false);
-            try
+            using DownloadedExtensionAsset downloaded = await assetDownloadService
+                .DownloadAndResolveAsync(asset.BrowserDownloadUrl, AppPaths.TempUpdatesRoot, cancellationToken)
+                .ConfigureAwait(false);
+            ExtensionAsset resolved = downloaded.Asset;
+            if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
             {
-                ExtensionAsset resolved = assetResolver.Resolve(downloaded.Path, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "updates"));
-                if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string resolvedVersion = VersionComparer.ExtractVersionText(release.TagName)
-                    ?? VersionComparer.ExtractVersionText(release.Name ?? string.Empty)
-                    ?? resolved.Manifest.Version;
-
-                return new AvailableUpdate(
-                    resolvedVersion,
-                    asset.BrowserDownloadUrl,
-                    string.IsNullOrWhiteSpace(release.Name) ? release.TagName : release.Name,
-                    release.PublishedAt);
+                continue;
             }
-            finally
-            {
-                TryDelete(downloaded.Path);
-            }
+
+            string resolvedVersion = VersionComparer.ExtractVersionText(release.TagName)
+                ?? VersionComparer.ExtractVersionText(release.Name ?? string.Empty)
+                ?? resolved.Manifest.Version;
+
+            return new AvailableUpdate(
+                resolvedVersion,
+                asset.BrowserDownloadUrl,
+                string.IsNullOrWhiteSpace(release.Name) ? release.TagName : release.Name,
+                release.PublishedAt);
         }
 
         return null;
@@ -88,64 +83,30 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
             return null;
         }
 
-        DownloadedAsset downloaded = await DownloadAsync(assetUri, cancellationToken).ConfigureAwait(false);
-        try
+        using DownloadedExtensionAsset downloaded = await assetDownloadService
+            .DownloadAndResolveAsync(assetUri, AppPaths.TempUpdatesRoot, cancellationToken)
+            .ConfigureAwait(false);
+        ExtensionAsset resolved = downloaded.Asset;
+        if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
         {
-            ExtensionAsset resolved = assetResolver.Resolve(downloaded.Path, Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "updates"));
-            if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            string releaseName = Path.GetFileName(assetUri.LocalPath);
-            if (string.IsNullOrWhiteSpace(releaseName))
-            {
-                releaseName = resolved.SourceDescription;
-            }
-
-            return new AvailableUpdate(
-                resolved.Manifest.Version,
-                assetUri,
-                releaseName,
-                downloaded.LastModified ?? DateTimeOffset.UtcNow);
+            return null;
         }
-        finally
+
+        string releaseName = Path.GetFileName(assetUri.LocalPath);
+        if (string.IsNullOrWhiteSpace(releaseName))
         {
-            TryDelete(downloaded.Path);
+            releaseName = resolved.SourceDescription;
         }
-    }
 
-    private async Task<DownloadedAsset> DownloadAsync(Uri uri, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads"));
-        string targetPath = Path.Combine(Path.GetTempPath(), "SsmsExtensionManager", "downloads", $"{Guid.NewGuid():N}{Path.GetExtension(uri.LocalPath)}");
-
-        using HttpResponseMessage response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using FileStream output = File.Create(targetPath);
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        return new DownloadedAsset(targetPath, response.Content.Headers.LastModified);
+        return new AvailableUpdate(
+            resolved.Manifest.Version,
+            assetUri,
+            releaseName,
+            downloaded.LastModified ?? DateTimeOffset.UtcNow);
     }
 
     private static bool IsSupportedAsset(string name)
-    {
-        return name.EndsWith(".vsix", StringComparison.OrdinalIgnoreCase)
-            || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch
-        {
-            // Best effort cleanup only.
-        }
-    }
+        => ExtensionPackageSource.IsSupportedAssetName(name);
 
     private sealed record GitHubRelease(
         [property: JsonPropertyName("tag_name")] string TagName,
@@ -157,7 +118,4 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
         string Name,
         [property: JsonPropertyName("browser_download_url")] Uri BrowserDownloadUrl);
 
-    private sealed record DownloadedAsset(
-        string Path,
-        DateTimeOffset? LastModified);
 }

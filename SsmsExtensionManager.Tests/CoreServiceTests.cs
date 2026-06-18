@@ -40,6 +40,75 @@ public sealed class CoreServiceTests
         Assert.Equal(expected, VersionComparer.ExtractVersionText(input));
     }
 
+    [Theory]
+    [InlineData("https://example.com/extensions/sample.vsix", UpdateSourceType.DirectVsixUrl)]
+    [InlineData("https://example.com/releases/sample.zip?download=1", UpdateSourceType.DirectZipUrl)]
+    public void ExtensionPackageSource_ClassifiesSupportedDirectUrls(string url, UpdateSourceType expected)
+    {
+        Assert.True(ExtensionPackageSource.TryGetDirectSourceType(url, out UpdateSourceType sourceType));
+        Assert.Equal(expected, sourceType);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/extensions/icon.webp")]
+    [InlineData("https://example.com/extensions/readme.txt")]
+    public void ExtensionPackageSource_RejectsUnsupportedDirectUrls(string url)
+    {
+        Assert.False(ExtensionPackageSource.TryGetDirectSourceType(url, out UpdateSourceType sourceType));
+        Assert.Equal(UpdateSourceType.Unknown, sourceType);
+    }
+
+    [Fact]
+    public void AppPaths_BuildsDefaultPathsFromSharedRoots()
+    {
+        Assert.EndsWith(Path.Combine("SsmsExtensionManager", "settings.json"), AppPaths.SettingsFilePath);
+        Assert.EndsWith(Path.Combine("SsmsExtensionManager", "managed-extensions.json"), AppPaths.ManagedExtensionsFilePath);
+        Assert.EndsWith(Path.Combine("SsmsExtensionManager", "extension-sources.json"), AppPaths.ExtensionSourcesFilePath);
+        Assert.EndsWith(Path.Combine("SsmsExtensionManager", "PackageCache"), AppPaths.PackageCacheRoot);
+        Assert.Equal(Path.Combine(AppPaths.TempRoot, "assets"), AppPaths.TempAssetsRoot);
+        Assert.Equal(Path.Combine(AppPaths.TempRoot, "updates"), AppPaths.TempUpdatesRoot);
+        Assert.Equal(Path.Combine(AppPaths.TempRoot, "downloads"), AppPaths.TempDownloadsRoot);
+    }
+
+    [Fact]
+    public void SsmsPaths_BuildsPathsFromInstallationRoot()
+    {
+        string installationPath = Path.Combine("C:", "Program Files", "Microsoft SQL Server Management Studio 22", "Release");
+
+        Assert.Equal(Path.Combine(installationPath, "Common7", "IDE"), SsmsPaths.GetIdePath(installationPath));
+        Assert.Equal(Path.Combine(installationPath, "Common7", "IDE", SsmsPaths.ExecutableFileName), SsmsPaths.GetExecutablePath(installationPath));
+        Assert.Equal(Path.Combine(installationPath, "Common7", "IDE", SsmsPaths.VsixInstallerFileName), SsmsPaths.GetVsixInstallerPath(installationPath));
+        Assert.Equal(Path.Combine(installationPath, "Common7", "IDE", "Extensions"), SsmsPaths.GetMachineExtensionRoot(installationPath));
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("  value  ", "value")]
+    public void ValueNormalization_ConvertsEmptyTextToNull(string? value, string? expected)
+    {
+        Assert.Equal(expected, ValueNormalization.EmptyToNull(value));
+    }
+
+    [Theory]
+    [InlineData("List", AppSettings.ManageViewModeList)]
+    [InlineData("list", AppSettings.ManageViewModeList)]
+    [InlineData("Tiles", AppSettings.ManageViewModeTiles)]
+    [InlineData("unexpected", AppSettings.ManageViewModeTiles)]
+    [InlineData(null, AppSettings.ManageViewModeTiles)]
+    public void AppSettings_NormalizesViewMode(string? value, string expected)
+    {
+        Assert.Equal(expected, AppSettings.NormalizeViewMode(value));
+    }
+
+    [Fact]
+    public void ValueNormalization_RoundsWindowPlacementToTwoDecimals()
+    {
+        Assert.Equal(10.12, ValueNormalization.RoundWindowPlacement(10.123));
+        Assert.Equal(10.13, ValueNormalization.RoundWindowPlacement(10.125));
+    }
+
     [Fact]
     public void VsixManifestReader_ReadsManifestFromVsix()
     {
@@ -75,6 +144,39 @@ public sealed class CoreServiceTests
         Assert.Equal("Sample.Extension", asset.Manifest.Id);
         Assert.Equal("2.0.0", asset.Manifest.Version);
         Assert.True(File.Exists(asset.FilePath));
+    }
+
+    [Fact]
+    public async Task ExtensionAssetDownloadService_ResolvesAndCleansDownloadedPackage()
+    {
+        string tempRoot = CreateTempRoot();
+        string vsixPath = Path.Combine(tempRoot, "sample.vsix");
+        CreateVsix(vsixPath, "Sample.Extension", "2.1.0", "Sample Publisher", "Sample Extension");
+        byte[] bytes = await File.ReadAllBytesAsync(vsixPath);
+        DateTimeOffset lastModified = DateTimeOffset.UtcNow;
+        HttpClient httpClient = new(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes)
+            {
+                Headers =
+                {
+                    LastModified = lastModified
+                }
+            }
+        }));
+        ExtensionAssetDownloadService service = new(httpClient, new ExtensionAssetResolver(new VsixManifestReader()));
+
+        DownloadedExtensionAsset downloaded = await service.DownloadAndResolveAsync(
+            new Uri("https://example.com/extensions/sample.vsix"),
+            Path.Combine(tempRoot, "extract"));
+        string downloadPath = downloaded.DownloadPath;
+
+        Assert.True(File.Exists(downloadPath));
+        Assert.Equal("Sample.Extension", downloaded.Asset.Manifest.Id);
+        Assert.Equal(lastModified, downloaded.LastModified);
+
+        downloaded.Dispose();
+        Assert.False(File.Exists(downloadPath));
     }
 
     [Fact]
@@ -240,7 +342,8 @@ public sealed class CoreServiceTests
             }
         }));
 
-        GitHubReleaseUpdateChecker checker = new(httpClient, new ExtensionAssetResolver(new VsixManifestReader()));
+        ExtensionAssetResolver assetResolver = new(new VsixManifestReader());
+        GitHubReleaseUpdateChecker checker = new(httpClient, new ExtensionAssetDownloadService(httpClient, assetResolver));
         var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
         UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://example.com/extensions/sample.vsix");
 

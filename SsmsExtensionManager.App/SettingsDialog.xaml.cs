@@ -47,17 +47,7 @@ public partial class SettingsDialog : Window
 
     private void Window_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!InstanceDropDownPopup.IsOpen)
-        {
-            return;
-        }
-
-        if (InstanceDropDownButton.IsMouseOver || InstanceListBox.IsMouseOver)
-        {
-            return;
-        }
-
-        InstanceDropDownPopup.IsOpen = false;
+        WpfUiHelpers.ClosePopupIfClickOutside(InstanceDropDownPopup, InstanceDropDownButton, InstanceListBox);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
