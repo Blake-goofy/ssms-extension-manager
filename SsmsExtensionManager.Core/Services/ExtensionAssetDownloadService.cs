@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using SsmsExtensionManager.Core.Models;
 
 namespace SsmsExtensionManager.Core.Services;
@@ -13,7 +14,7 @@ public sealed class ExtensionAssetDownloadService(HttpClient httpClient, Extensi
         try
         {
             ExtensionAsset asset = assetResolver.Resolve(downloaded.Path, extractionRoot);
-            return new DownloadedExtensionAsset(asset, downloaded.Path, downloaded.LastModified);
+            return new DownloadedExtensionAsset(asset, downloaded.Path, downloaded.LastModified, downloaded.Sha256);
         }
         catch
         {
@@ -24,6 +25,11 @@ public sealed class ExtensionAssetDownloadService(HttpClient httpClient, Extensi
 
     private async Task<DownloadedPackage> DownloadAsync(Uri uri, CancellationToken cancellationToken)
     {
+        if (!ExternalUriPolicy.IsHttpsUri(uri))
+        {
+            throw new InvalidOperationException("Extension packages must be downloaded over HTTPS.");
+        }
+
         string targetRoot = AppPaths.TempDownloadsRoot;
         Directory.CreateDirectory(targetRoot);
         string targetPath = Path.Combine(targetRoot, $"{Guid.NewGuid():N}{Path.GetExtension(uri.LocalPath)}");
@@ -33,10 +39,14 @@ public sealed class ExtensionAssetDownloadService(HttpClient httpClient, Extensi
             using HttpResponseMessage response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            await using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using FileStream output = File.Create(targetPath);
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            return new DownloadedPackage(targetPath, response.Content.Headers.LastModified);
+            await using (Stream input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (FileStream output = File.Create(targetPath))
+            {
+                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            }
+
+            string sha256 = await ComputeSha256Async(targetPath, cancellationToken).ConfigureAwait(false);
+            return new DownloadedPackage(targetPath, response.Content.Headers.LastModified, sha256);
         }
         catch
         {
@@ -45,13 +55,22 @@ public sealed class ExtensionAssetDownloadService(HttpClient httpClient, Extensi
         }
     }
 
-    private sealed class DownloadedPackage(string path, DateTimeOffset? lastModified) : IDisposable
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
+    {
+        await using FileStream stream = File.OpenRead(path);
+        byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private sealed class DownloadedPackage(string path, DateTimeOffset? lastModified, string sha256) : IDisposable
     {
         private bool _disposed;
 
         public string Path { get; } = path;
 
         public DateTimeOffset? LastModified { get; } = lastModified;
+
+        public string Sha256 { get; } = sha256;
 
         public void Dispose()
         {
@@ -66,7 +85,7 @@ public sealed class ExtensionAssetDownloadService(HttpClient httpClient, Extensi
     }
 }
 
-public sealed class DownloadedExtensionAsset(ExtensionAsset asset, string downloadPath, DateTimeOffset? lastModified) : IDisposable
+public sealed class DownloadedExtensionAsset(ExtensionAsset asset, string downloadPath, DateTimeOffset? lastModified, string sha256) : IDisposable
 {
     private bool _disposed;
 
@@ -75,6 +94,8 @@ public sealed class DownloadedExtensionAsset(ExtensionAsset asset, string downlo
     public string DownloadPath { get; } = downloadPath;
 
     public DateTimeOffset? LastModified { get; } = lastModified;
+
+    public string Sha256 { get; } = sha256;
 
     public void Dispose()
     {

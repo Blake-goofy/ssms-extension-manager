@@ -16,6 +16,12 @@ public static class ExtensionPackageSource
 
     public static bool TryGetDirectSourceType(Uri uri, out UpdateSourceType sourceType)
     {
+        if (!ExternalUriPolicy.IsHttpsUri(uri))
+        {
+            sourceType = UpdateSourceType.Unknown;
+            return false;
+        }
+
         sourceType = Path.GetExtension(uri.LocalPath) switch
         {
             string extension when extension.Equals(VsixExtension, StringComparison.OrdinalIgnoreCase) => UpdateSourceType.DirectVsixUrl,

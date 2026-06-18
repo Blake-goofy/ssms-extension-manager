@@ -57,7 +57,7 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
                 .DownloadAndResolveAsync(asset.BrowserDownloadUrl, AppPaths.TempUpdatesRoot, cancellationToken)
                 .ConfigureAwait(false);
             ExtensionAsset resolved = downloaded.Asset;
-            if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
+            if (!VsixUpdateIdentityPolicy.IsTrustedUpdate(manifest, resolved.Manifest))
             {
                 continue;
             }
@@ -70,7 +70,8 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
                 resolvedVersion,
                 asset.BrowserDownloadUrl,
                 string.IsNullOrWhiteSpace(release.Name) ? release.TagName : release.Name,
-                release.PublishedAt);
+                release.PublishedAt,
+                downloaded.Sha256);
         }
 
         return null;
@@ -83,11 +84,16 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
             return null;
         }
 
+        if (!ExtensionPackageSource.TryGetDirectSourceType(assetUri, out _))
+        {
+            return null;
+        }
+
         using DownloadedExtensionAsset downloaded = await assetDownloadService
             .DownloadAndResolveAsync(assetUri, AppPaths.TempUpdatesRoot, cancellationToken)
             .ConfigureAwait(false);
         ExtensionAsset resolved = downloaded.Asset;
-        if (!string.Equals(resolved.Manifest.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
+        if (!VsixUpdateIdentityPolicy.IsTrustedUpdate(manifest, resolved.Manifest))
         {
             return null;
         }
@@ -102,7 +108,8 @@ public sealed class GitHubReleaseUpdateChecker(HttpClient httpClient, ExtensionA
             resolved.Manifest.Version,
             assetUri,
             releaseName,
-            downloaded.LastModified ?? DateTimeOffset.UtcNow);
+            downloaded.LastModified ?? DateTimeOffset.UtcNow,
+            downloaded.Sha256);
     }
 
     private static bool IsSupportedAsset(string name)

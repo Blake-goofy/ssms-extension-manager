@@ -45,9 +45,9 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             return OperationResult.Fail(ex.Message);
         }
 
-        if (!string.Equals(asset.Manifest.Id, installedExtension.Manifest.Id, StringComparison.OrdinalIgnoreCase))
+        if (!VsixUpdateIdentityPolicy.TryValidateUpdate(installedExtension.Manifest, asset.Manifest, out string identityError))
         {
-            return OperationResult.Fail($"Downloaded VSIX identity '{asset.Manifest.Id}' does not match installed extension '{installedExtension.Manifest.Id}'.");
+            return OperationResult.Fail(identityError);
         }
 
         OperationResult installerResult = RunVsixInstaller(installedExtension.SsmsInstance, BuildInstallArguments(asset.FilePath), cancellationToken);

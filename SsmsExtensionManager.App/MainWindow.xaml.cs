@@ -264,10 +264,26 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                ExtensionAsset asset;
+                try
+                {
+                    asset = _assetResolver.Resolve(packagePath, AppPaths.TempAssetsRoot);
+                }
+                catch (Exception ex)
+                {
+                    ShowMessage($"{row.DisplayName}: {ex.Message}");
+                    continue;
+                }
+
+                if (!VsixUpdateIdentityPolicy.TryValidateUpdate(row.Manifest, asset.Manifest, out string identityError))
+                {
+                    ShowMessage($"{row.DisplayName}: {identityError}");
+                    continue;
+                }
+
                 OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(row.Instance, packagePath, cancellationToken), cancellationToken);
                 if (result.Success)
                 {
-                    ExtensionAsset asset = _assetResolver.Resolve(packagePath, AppPaths.TempAssetsRoot);
                     string? installedVersionOverride = row.AvailableUpdate?.Version ?? row.LatestRelease?.Version;
                     await SaveRecordAsync(
                         row.Instance,
@@ -662,23 +678,7 @@ public partial class MainWindow : Window
 
     private void OpenExtensionPage(ExtensionRow row)
     {
-        if (row.OpenUri is null)
-        {
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = row.OpenUri.ToString(),
-                UseShellExecute = true
-            });
-        }
-        catch (Exception ex)
-        {
-            ShowMessage(ex.Message);
-        }
+        OpenExternalUri(row.OpenUri);
     }
 
     private void ConfigureRowActionsPopup()
@@ -1353,9 +1353,9 @@ public partial class MainWindow : Window
                 AppPaths.TempAssetsRoot,
                 cancellationToken);
             ExtensionAsset asset = downloaded.Asset;
-            if (!string.Equals(asset.Manifest.Id, row.Id, StringComparison.OrdinalIgnoreCase))
+            if (!GalleryExtensionMatcher.IsMatch(asset.Manifest, row.Extension))
             {
-                ShowMessage($"Downloaded VSIX identity '{asset.Manifest.Id}' does not match gallery extension '{row.Id}'.");
+                ShowMessage($"Downloaded VSIX package does not match gallery extension '{row.DisplayName}'.");
                 return;
             }
 
@@ -1776,6 +1776,18 @@ public partial class MainWindow : Window
                     AppPaths.TempAssetsRoot,
                     cancellationToken);
                 ExtensionAsset asset = downloaded.Asset;
+                if (!VsixUpdateIdentityPolicy.TryValidateUpdate(row.Manifest, asset.Manifest, out string identityError))
+                {
+                    ShowMessage($"{row.DisplayName}: {identityError}");
+                    continue;
+                }
+
+                if (!TryValidateUpdateHash(update, downloaded, out string hashError))
+                {
+                    ShowMessage($"{row.DisplayName}: {hashError}");
+                    continue;
+                }
+
                 string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
                 OperationResult result = await Task.Run(() => _installer.UpdateInstalledExtension(row.InstalledExtension!, cachedVsix, cancellationToken), cancellationToken);
                 if (result.Success)
@@ -1830,12 +1842,30 @@ public partial class MainWindow : Window
             AppPaths.TempAssetsRoot,
             cancellationToken);
         ExtensionAsset resolved = downloaded.Asset;
-        if (!string.Equals(resolved.Manifest.Id, row.Manifest.Id, StringComparison.OrdinalIgnoreCase))
+        if (!VsixUpdateIdentityPolicy.IsTrustedUpdate(row.Manifest, resolved.Manifest))
+        {
+            return null;
+        }
+
+        if (!TryValidateUpdateHash(asset, downloaded, out _))
         {
             return null;
         }
 
         return _packageCache.CacheVsix(resolved.FilePath, resolved.Manifest);
+    }
+
+    private static bool TryValidateUpdateHash(AvailableUpdate update, DownloadedExtensionAsset downloaded, out string errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(update.Sha256)
+            || string.Equals(update.Sha256, downloaded.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        errorMessage = "Downloaded VSIX hash does not match the update package that was previously validated.";
+        return false;
     }
 
     private async Task SaveRecordAsync(
@@ -2339,11 +2369,26 @@ public partial class MainWindow : Window
             return;
         }
 
+        OpenExternalUri(pageUri);
+    }
+
+    private void OpenExternalUri(Uri? uri)
+    {
+        if (uri is null)
+        {
+            return;
+        }
+
+        if (!ExternalUriPolicy.IsApprovedBrowserUri(uri) && !ConfirmUnapprovedExternalUri(uri))
+        {
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = pageUri.ToString(),
+                FileName = uri.AbsoluteUri,
                 UseShellExecute = true
             });
         }
@@ -2351,6 +2396,18 @@ public partial class MainWindow : Window
         {
             ShowMessage(ex.Message);
         }
+    }
+
+    private bool ConfirmUnapprovedExternalUri(Uri uri)
+    {
+        MessageBoxResult result = MessageBox.Show(
+            this,
+            $"This link was supplied by extension metadata or an update source and is not an approved SSMS Extension Manager web link:\n\n{uri.AbsoluteUri}\n\nOnly open it if you trust where it came from.",
+            "Open untrusted link?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        return result == MessageBoxResult.Yes;
     }
 
     private void SetCurrentView(NavigationView view)

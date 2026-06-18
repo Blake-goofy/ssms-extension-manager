@@ -64,7 +64,7 @@ public partial class SourceDialog : Window
             return;
         }
 
-        MessageBox.Show(this, "Enter a valid GitHub repository or direct .vsix/.zip URL.", "Edit Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
+        MessageBox.Show(this, "Enter a valid GitHub repository or HTTPS direct .vsix/.zip URL.", "Edit Update Source", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

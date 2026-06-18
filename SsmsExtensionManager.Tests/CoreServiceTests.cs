@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using SsmsExtensionManager.Core.Models;
 using SsmsExtensionManager.Core.Services;
 
@@ -52,10 +53,25 @@ public sealed class CoreServiceTests
     [Theory]
     [InlineData("https://example.com/extensions/icon.webp")]
     [InlineData("https://example.com/extensions/readme.txt")]
+    [InlineData("http://example.com/extensions/sample.vsix")]
+    [InlineData("file:///C:/Temp/sample.vsix")]
+    [InlineData("custom-protocol://example.com/sample.vsix")]
     public void ExtensionPackageSource_RejectsUnsupportedDirectUrls(string url)
     {
         Assert.False(ExtensionPackageSource.TryGetDirectSourceType(url, out UpdateSourceType sourceType));
         Assert.Equal(UpdateSourceType.Unknown, sourceType);
+    }
+
+    [Theory]
+    [InlineData("https://ssmsgallery.azurewebsites.net/extension/SSMS_EnvTabs", true)]
+    [InlineData("https://github.com/owner/repo", true)]
+    [InlineData("http://github.com/owner/repo", false)]
+    [InlineData("https://example.com/extension/SSMS_EnvTabs", false)]
+    [InlineData("file:///C:/Temp/sample.vsix", false)]
+    [InlineData("custom-protocol://example.com/sample", false)]
+    public void ExternalUriPolicy_ApprovesOnlyHttpsKnownBrowserHosts(string url, bool expected)
+    {
+        Assert.Equal(expected, ExternalUriPolicy.IsApprovedBrowserUri(new Uri(url)));
     }
 
     [Fact]
@@ -174,6 +190,7 @@ public sealed class CoreServiceTests
         Assert.True(File.Exists(downloadPath));
         Assert.Equal("Sample.Extension", downloaded.Asset.Manifest.Id);
         Assert.Equal(lastModified, downloaded.LastModified);
+        Assert.Equal(Sha256(bytes), downloaded.Sha256);
 
         downloaded.Dispose();
         Assert.False(File.Exists(downloadPath));
@@ -293,6 +310,18 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public void VsixUpdateIdentityPolicy_RejectsSameIdWithDifferentPublisher()
+    {
+        var installed = new VsixManifest("Sample.Extension", "1.0.0", "Trusted Publisher", "Sample Extension", null, null, null);
+        var candidate = new VsixManifest("Sample.Extension", "2.0.0", "Other Publisher", "Sample Extension", null, null, null);
+
+        bool valid = VsixUpdateIdentityPolicy.TryValidateUpdate(installed, candidate, out string errorMessage);
+
+        Assert.False(valid);
+        Assert.Contains("publisher", errorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void GalleryExtensionMatcher_RemovesStaleGallerySourceWithoutMatch()
     {
         UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://ssmsgallery.azurewebsites.net/extensions/SqlFormatter/extension.vsix");
@@ -352,6 +381,51 @@ public sealed class CoreServiceTests
         Assert.NotNull(update);
         Assert.Equal("4.2.0", update!.Version);
         Assert.Equal("https://example.com/extensions/sample.vsix", update.AssetUri.ToString());
+        Assert.Equal(Sha256(bytes), update.Sha256);
+    }
+
+    [Fact]
+    public async Task GitHubReleaseUpdateChecker_RejectsDirectVsixWithMismatchedPublisher()
+    {
+        string tempRoot = CreateTempRoot();
+        string vsixPath = Path.Combine(tempRoot, "sample.vsix");
+        CreateVsix(vsixPath, "Sample.Extension", "4.2.0", "Other Publisher", "Sample Extension");
+        byte[] bytes = await File.ReadAllBytesAsync(vsixPath);
+
+        HttpClient httpClient = new(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(bytes)
+        }));
+
+        ExtensionAssetResolver assetResolver = new(new VsixManifestReader());
+        GitHubReleaseUpdateChecker checker = new(httpClient, new ExtensionAssetDownloadService(httpClient, assetResolver));
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "https://example.com/extensions/sample.vsix");
+
+        AvailableUpdate? update = await checker.FindLatestMatchingAssetAsync(manifest, source);
+
+        Assert.Null(update);
+    }
+
+    [Fact]
+    public async Task GitHubReleaseUpdateChecker_RejectsDirectHttpUrlBeforeDownload()
+    {
+        bool requested = false;
+        HttpClient httpClient = new(new StubHttpMessageHandler(_ =>
+        {
+            requested = true;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }));
+
+        ExtensionAssetResolver assetResolver = new(new VsixManifestReader());
+        GitHubReleaseUpdateChecker checker = new(httpClient, new ExtensionAssetDownloadService(httpClient, assetResolver));
+        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        UpdateSource source = new(UpdateSourceType.DirectVsixUrl, "http://example.com/extensions/sample.vsix");
+
+        AvailableUpdate? update = await checker.FindLatestMatchingAssetAsync(manifest, source);
+
+        Assert.Null(update);
+        Assert.False(requested);
     }
 
     [Fact]
@@ -825,6 +899,9 @@ public sealed class CoreServiceTests
         {
             [galleryExtension.Id] = galleryExtension
         };
+
+    private static string Sha256(byte[] bytes)
+        => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private static void CreateVsix(string path, string id, string version, string publisher, string displayName)
     {
