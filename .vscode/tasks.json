@@ -6,6 +6,12 @@
       "type": "shell",
       "command": "dotnet run --project .\\SsmsExtensionManager.App\\SsmsExtensionManager.App.csproj",
       "problemMatcher": []
+    },
+    {
+      "label": "Run app with forced update notification",
+      "type": "shell",
+      "command": "$env:SSMS_EXTENSION_MANAGER_FORCE_APP_UPDATE='1'; $env:SSMS_EXTENSION_MANAGER_TEST_APP_UPDATE_VERSION='999.0.0-test'; dotnet run --project .\\SsmsExtensionManager.App\\SsmsExtensionManager.App.csproj",
+      "problemMatcher": []
     }
   ]
 }

@@ -64,6 +64,7 @@ public partial class MainWindow : Window
     private bool _galleryLoaded;
     private bool _galleryCatalogLoaded;
     private bool _syncingManageSelection;
+    private DateTime? _lastSettingsFileWriteTimeUtc;
     private CancellationTokenSource? _busyCancellationTokenSource;
 
     private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
@@ -98,6 +99,7 @@ public partial class MainWindow : Window
         _manageViewMode = NormalizeViewMode(settings.ManageViewMode);
         _browseViewMode = NormalizeViewMode(settings.BrowseViewMode);
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
+        UpdateLastSettingsFileWriteTime();
         ThemeManager.Apply(_darkTheme);
         ApplyManageViewMode();
         ApplyBrowseViewMode();
@@ -109,7 +111,7 @@ public partial class MainWindow : Window
         ApplyWindowPlacement(settings.WindowPlacement);
         await RefreshAsync();
         ApplyNavigation();
-        if (_checkForApplicationUpdates)
+        if (_checkForApplicationUpdates || _appUpdateService.IsTestMode)
         {
             await RefreshApplicationUpdateStateAsync(interactive: false, promptToApply: false);
         }
@@ -394,6 +396,26 @@ public partial class MainWindow : Window
         SetCurrentView(NavigationView.Settings);
     }
 
+    private async void EditSettingsJson_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await SaveSettingsAsync();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _settingsStore.FilePath,
+                UseShellExecute = true
+            });
+
+            _settingsStatusText = $"Opened {_settingsStore.FilePath}. Restart the app after editing to reload changes.";
+            UpdateFooterText();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage($"Unable to open the settings JSON file. {ex.Message}");
+        }
+    }
+
     private async void CheckApplicationUpdates_Click(object sender, RoutedEventArgs e)
     {
         await RefreshApplicationUpdateStateAsync(interactive: true, promptToApply: true);
@@ -401,7 +423,7 @@ public partial class MainWindow : Window
 
     private async void UpdateAppButton_Click(object sender, RoutedEventArgs e)
     {
-        await RefreshApplicationUpdateStateAsync(interactive: true, promptToApply: true);
+        await RefreshApplicationUpdateStateAsync(interactive: true, promptToApply: true, confirmBeforeApply: false);
     }
 
     private void Help_Click(object sender, RoutedEventArgs e)
@@ -414,7 +436,7 @@ public partial class MainWindow : Window
             MessageBoxImage.Information);
     }
 
-    private async Task RefreshApplicationUpdateStateAsync(bool interactive, bool promptToApply)
+    private async Task RefreshApplicationUpdateStateAsync(bool interactive, bool promptToApply, bool confirmBeforeApply = true)
     {
         if (!_appUpdateService.IsConfigured)
         {
@@ -478,7 +500,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (result.Update is not { } update)
+        if (result.Version is not { } updateVersion)
         {
             return;
         }
@@ -489,18 +511,32 @@ public partial class MainWindow : Window
         }
 
         bool pendingRestart = result.Status == AppUpdateCheckStatus.UpdatePendingRestart;
-        string prompt = pendingRestart
-            ? $"SSMS Extension Manager {update.Version} is ready to apply. Restart now?"
-            : $"SSMS Extension Manager {update.Version} is available. Download, install, and restart now?";
+        if (confirmBeforeApply)
+        {
+            string prompt = pendingRestart
+                ? $"SSMS Extension Manager {updateVersion} is ready to apply. Restart now?"
+                : $"SSMS Extension Manager {updateVersion} is available. Download, install, and restart now?";
 
-        MessageBoxResult confirm = MessageBox.Show(
-            this,
-            prompt,
-            "Application update",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information);
+            MessageBoxResult confirm = MessageBox.Show(
+                this,
+                prompt,
+                "Application update",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
 
-        if (confirm != MessageBoxResult.Yes)
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+
+        if (result.IsTestUpdate)
+        {
+            ShowMessage("Test update selected. No update was downloaded or applied because this app was launched with a forced test update.");
+            return;
+        }
+
+        if (result.Update is not { } update)
         {
             return;
         }
@@ -523,7 +559,11 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
-        _settingsStore.Save(BuildCurrentSettings());
+        if (!SettingsFileChangedSinceLastAppSave())
+        {
+            SaveSettings();
+        }
+
         base.OnClosing(e);
     }
 
@@ -1790,6 +1830,45 @@ public partial class MainWindow : Window
     private async Task SaveSettingsAsync()
     {
         await _settingsStore.SaveAsync(BuildCurrentSettings());
+        UpdateLastSettingsFileWriteTime();
+    }
+
+    private void SaveSettings()
+    {
+        _settingsStore.Save(BuildCurrentSettings());
+        UpdateLastSettingsFileWriteTime();
+    }
+
+    private bool SettingsFileChangedSinceLastAppSave()
+    {
+        if (_lastSettingsFileWriteTimeUtc is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return !File.Exists(_settingsStore.FilePath)
+                || File.GetLastWriteTimeUtc(_settingsStore.FilePath) != _lastSettingsFileWriteTimeUtc.Value;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void UpdateLastSettingsFileWriteTime()
+    {
+        try
+        {
+            _lastSettingsFileWriteTimeUtc = File.Exists(_settingsStore.FilePath)
+                ? File.GetLastWriteTimeUtc(_settingsStore.FilePath)
+                : null;
+        }
+        catch
+        {
+            _lastSettingsFileWriteTimeUtc = null;
+        }
     }
 
     private void ManageNavButton_Click(object sender, RoutedEventArgs e) => SetCurrentView(NavigationView.Manage);
@@ -2033,9 +2112,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        bool showButton = _checkForApplicationUpdates
+        bool showButton = (_checkForApplicationUpdates || _applicationUpdateResult?.IsTestUpdate == true)
             && _applicationUpdateResult?.Status is AppUpdateCheckStatus.UpdateAvailable or AppUpdateCheckStatus.UpdatePendingRestart;
         UpdateAppButton.Visibility = showButton ? Visibility.Visible : Visibility.Collapsed;
+
+        if (UpdateAppButtonText is not null)
+        {
+            bool pendingRestart = _applicationUpdateResult?.Status == AppUpdateCheckStatus.UpdatePendingRestart;
+            UpdateAppButtonText.Text = pendingRestart ? "Restart to Update" : "Update";
+            UpdateAppButton.ToolTip = pendingRestart
+                ? "Application update ready to apply"
+                : "Application update available";
+        }
     }
 
     private void UpdateFooterText()

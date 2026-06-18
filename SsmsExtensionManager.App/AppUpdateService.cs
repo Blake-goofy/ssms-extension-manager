@@ -5,10 +5,25 @@ namespace SsmsExtensionManager.App;
 
 public sealed class AppUpdateService
 {
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(AppBuildInfo.UpdateSourceUrl);
+    private const string ForceUpdateEnvironmentVariable = "SSMS_EXTENSION_MANAGER_FORCE_APP_UPDATE";
+    private const string TestUpdateVersionEnvironmentVariable = "SSMS_EXTENSION_MANAGER_TEST_APP_UPDATE_VERSION";
+
+    public bool IsConfigured => IsForcedUpdateEnabled()
+        || !string.IsNullOrWhiteSpace(AppBuildInfo.UpdateSourceUrl);
+
+    public bool IsTestMode => IsForcedUpdateEnabled();
 
     public async Task<AppUpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
+        if (IsForcedUpdateEnabled())
+        {
+            return new AppUpdateCheckResult(
+                AppUpdateCheckStatus.UpdateAvailable,
+                null,
+                IsTestUpdate: true,
+                TestVersion: GetTestUpdateVersion());
+        }
+
         if (!IsConfigured)
         {
             return new AppUpdateCheckResult(AppUpdateCheckStatus.NotConfigured, null);
@@ -60,11 +75,32 @@ public sealed class AppUpdateService
         GithubSource source = new(AppBuildInfo.UpdateSourceUrl, accessToken: null, prerelease: false);
         return new UpdateManager(source);
     }
+
+    private static bool IsForcedUpdateEnabled()
+    {
+        string? value = Environment.GetEnvironmentVariable(ForceUpdateEnvironmentVariable);
+        return value is not null
+            && !value.Equals("0", StringComparison.OrdinalIgnoreCase)
+            && !value.Equals("false", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetTestUpdateVersion()
+    {
+        string? version = Environment.GetEnvironmentVariable(TestUpdateVersionEnvironmentVariable);
+        return string.IsNullOrWhiteSpace(version) ? "999.0.0-test" : version;
+    }
 }
 
 public sealed record AppUpdate(VelopackAsset TargetRelease, UpdateInfo? UpdateInfo, string Version);
 
-public sealed record AppUpdateCheckResult(AppUpdateCheckStatus Status, AppUpdate? Update);
+public sealed record AppUpdateCheckResult(
+    AppUpdateCheckStatus Status,
+    AppUpdate? Update,
+    bool IsTestUpdate = false,
+    string? TestVersion = null)
+{
+    public string? Version => Update?.Version ?? TestVersion;
+}
 
 public enum AppUpdateCheckStatus
 {

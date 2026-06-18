@@ -141,6 +141,48 @@
             <Setter Property="Padding" Value="8,3" />
         </Style>
 
+        <Style x:Key="AppUpdateMenuItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="Background" Value="{DynamicResource PrimaryActionBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryActionForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryActionBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="4,2,0,2" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              RecognizesAccessKey="True"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PrimaryActionHoverBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource PrimaryActionHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource DisabledControlBackgroundBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ViewModeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
@@ -308,6 +350,7 @@
                 <MenuItem Header="_Update All" Click="UpdateAll_Click" />
                 <Separator />
                 <MenuItem Header="_Settings" Click="Settings_Click" />
+                <MenuItem Header="Edit Settings as _JSON" Click="EditSettingsJson_Click" />
             </MenuItem>
             <MenuItem Header="_Selection">
                 <MenuItem x:Name="SelectionUpdateMenuItem" Header="_Update" Click="UpdateSelected_Click" />
@@ -321,6 +364,19 @@
                 <MenuItem Header="_Check for Application Updates" Click="CheckApplicationUpdates_Click" />
                 <Separator />
                 <MenuItem Header="_Help" Click="Help_Click" />
+            </MenuItem>
+            <MenuItem x:Name="UpdateAppButton"
+                      Style="{StaticResource AppUpdateMenuItemStyle}"
+                      Visibility="Collapsed"
+                      Click="UpdateAppButton_Click"
+                      ToolTip="Application update available">
+                <MenuItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="UpdateAppButtonText"
+                                   Text="Update"
+                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" />
+                    </StackPanel>
+                </MenuItem.Header>
             </MenuItem>
         </Menu>
 
@@ -341,14 +397,6 @@
                     Margin="0,0,18,0">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,2">
-                        <Button x:Name="UpdateAppButton"
-                                Content="Update"
-                                DockPanel.Dock="Right"
-                                Padding="6,2"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                Visibility="Collapsed"
-                                Click="UpdateAppButton_Click" />
                         <TextBlock Text="Menu"
                                    FontSize="12"
                                    FontWeight="Bold"
@@ -838,9 +886,12 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0"
-                              HorizontalAlignment="Left"
-                              Width="320">
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="320" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
                             <Button x:Name="InstanceDropDownButton"
                                     Padding="8,5"
                                     HorizontalContentAlignment="Stretch"
@@ -910,6 +961,13 @@
                                     </ListBox>
                                 </Border>
                             </Popup>
+
+                            <Button Grid.Column="1"
+                                    Content="Edit as JSON"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Padding="10,5"
+                                    Click="EditSettingsJson_Click" />
                         </Grid>
 
                         <CheckBox Grid.Row="1"
@@ -932,6 +990,7 @@
                                   Margin="0,14,0,0"
                                   Checked="SettingsControl_Changed"
                                   Unchecked="SettingsControl_Changed" />
+
                     </Grid>
                 </Grid>
 

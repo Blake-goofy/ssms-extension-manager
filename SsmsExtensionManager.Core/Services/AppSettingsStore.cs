@@ -15,6 +15,8 @@ public sealed class AppSettingsStore
             "settings.json");
     }
 
+    public string FilePath => _filePath;
+
     public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(_filePath))
