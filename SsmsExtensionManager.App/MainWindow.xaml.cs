@@ -1143,7 +1143,7 @@ public partial class MainWindow : Window
 
                 try
                 {
-                    GalleryStatusText.Text = "Loading gallery...";
+                    GalleryStatusText.Text = string.Empty;
                     extensions = await LoadGalleryCatalogAsync(force, cancellationToken);
                 }
                 catch
