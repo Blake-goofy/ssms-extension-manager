@@ -387,6 +387,102 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public async Task ManagedExtensionStore_SerializesConcurrentMutations()
+    {
+        string tempRoot = CreateTempRoot();
+        ManagedExtensionStore store = new(Path.Combine(tempRoot, "managed-extensions.json"));
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        using ManualResetEventSlim start = new(false);
+
+        Task[] tasks = Enumerable.Range(0, 25)
+            .Select(index => Task.Run(async () =>
+            {
+                start.Wait();
+                var manifest = new VsixManifest(
+                    $"Sample.Extension.{index}",
+                    "1.0.0",
+                    "Sample Publisher",
+                    $"Sample Extension {index}",
+                    null,
+                    null,
+                    null);
+                var record = new ManagedExtensionRecord(
+                    "SSMS22",
+                    manifest,
+                    null,
+                    $"cached-{index}.vsix",
+                    false,
+                    now.AddSeconds(index),
+                    null,
+                    ManagedExtensionRecord.UninstalledTimestampKind,
+                    now.AddSeconds(index));
+
+                await store.UpsertAsync(record);
+            }))
+            .ToArray();
+
+        start.Set();
+        await Task.WhenAll(tasks);
+
+        IReadOnlyList<ManagedExtensionRecord> saved = await store.LoadAsync();
+
+        Assert.Equal(25, saved.Count);
+        Assert.Equal(
+            Enumerable.Range(0, 25).Select(index => $"Sample.Extension.{index}").Order(StringComparer.OrdinalIgnoreCase),
+            saved.Select(record => record.Manifest.Id).Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task UpdateSourceStore_SerializesConcurrentMutations()
+    {
+        string tempRoot = CreateTempRoot();
+        UpdateSourceStore store = new(Path.Combine(tempRoot, "extension-sources.json"));
+        Dictionary<string, UpdateSource> initialSources = Enumerable.Range(0, 20)
+            .ToDictionary(
+                index => $"Existing.Source.{index}",
+                index => new UpdateSource(UpdateSourceType.DirectVsixUrl, $"https://example.com/existing-{index}.vsix"),
+                StringComparer.OrdinalIgnoreCase);
+        await store.SaveAsync(initialSources);
+        using ManualResetEventSlim start = new(false);
+
+        Task[] removeTasks = Enumerable.Range(0, 10)
+            .Select(index => Task.Run(async () =>
+            {
+                start.Wait();
+                await store.RemoveAsync($"Existing.Source.{index * 2}");
+            }))
+            .ToArray();
+        Task[] setTasks = Enumerable.Range(0, 15)
+            .Select(index => Task.Run(async () =>
+            {
+                start.Wait();
+                await store.SetAsync(
+                    $"New.Source.{index}",
+                    new UpdateSource(UpdateSourceType.GitHubRelease, $"owner/repo-{index}"));
+            }))
+            .ToArray();
+
+        start.Set();
+        await Task.WhenAll(removeTasks.Concat(setTasks));
+
+        IReadOnlyDictionary<string, UpdateSource> saved = await store.LoadAsync();
+
+        Assert.Equal(25, saved.Count);
+        foreach (int index in Enumerable.Range(0, 10))
+        {
+            Assert.False(saved.ContainsKey($"Existing.Source.{index * 2}"));
+            Assert.True(saved.ContainsKey($"Existing.Source.{index * 2 + 1}"));
+        }
+
+        foreach (int index in Enumerable.Range(0, 15))
+        {
+            Assert.Equal(
+                new UpdateSource(UpdateSourceType.GitHubRelease, $"owner/repo-{index}"),
+                saved[$"New.Source.{index}"]);
+        }
+    }
+
+    [Fact]
     public async Task AppSettingsStore_SavesAndLoadsSettings()
     {
         string tempRoot = CreateTempRoot();
@@ -552,6 +648,50 @@ public sealed class CoreServiceTests
         Assert.Equal(20.99, reloaded.WindowPlacement.Top);
         Assert.Equal(1324.00, reloaded.WindowPlacement.Width);
         Assert.Equal(742.40, reloaded.WindowPlacement.Height);
+    }
+
+    [Fact]
+    public async Task AppSettingsStore_ConcurrentSavesDoNotClobberOrThrow()
+    {
+        string tempRoot = CreateTempRoot();
+        AppSettingsStore store = new(Path.Combine(tempRoot, "settings.json"));
+        using ManualResetEventSlim start = new(false);
+
+        Task[] tasks = Enumerable.Range(0, 24)
+            .Select(index => Task.Run(async () =>
+            {
+                start.Wait();
+
+                var settings = new AppSettings(
+                    $"SSMS22.{index}",
+                    index % 2 == 0,
+                    index % 3 == 0,
+                    null,
+                    index % 4 != 0,
+                    index % 2 == 0 ? AppSettings.ManageViewModeTiles : AppSettings.ManageViewModeList,
+                    index % 2 == 0 ? AppSettings.ManageViewModeList : AppSettings.ManageViewModeTiles,
+                    $@"C:\Tools\SSMS{index}\SSMS.exe",
+                    $"--instance {index}");
+
+                if (index % 2 == 0)
+                {
+                    await store.SaveAsync(settings);
+                }
+                else
+                {
+                    store.Save(settings);
+                }
+            }))
+            .ToArray();
+
+        start.Set();
+        await Task.WhenAll(tasks);
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.StartsWith("SSMS22.", loaded.SelectedSsmsInstanceId);
+        Assert.StartsWith(@"C:\Tools\SSMS", loaded.SsmsLaunchExecutablePath);
+        Assert.StartsWith("--instance ", loaded.SsmsLaunchArguments);
     }
 
     private static string CreateTempRoot()

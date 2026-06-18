@@ -67,6 +67,8 @@ public partial class MainWindow : Window
     private bool _syncingManageSelection;
     private DateTime? _lastSettingsFileWriteTimeUtc;
     private CancellationTokenSource? _busyCancellationTokenSource;
+    private readonly object _settingsSaveLock = new();
+    private Task _pendingSettingsSaveTask = Task.CompletedTask;
 
     private static readonly Uri GalleryFeedUri = GalleryConstants.FeedUri;
     private static readonly string DefaultSsmsLaunchExecutablePath = SsmsPaths.GetDefaultExecutablePath();
@@ -1906,13 +1908,37 @@ public partial class MainWindow : Window
 
     private async Task SaveSettingsAsync()
     {
-        await _settingsStore.SaveAsync(BuildCurrentSettings());
-        UpdateLastSettingsFileWriteTime();
+        await QueueSettingsSaveAsync(BuildCurrentSettings());
     }
 
     private void SaveSettings()
     {
-        _settingsStore.Save(BuildCurrentSettings());
+        QueueSettingsSaveAsync(BuildCurrentSettings()).GetAwaiter().GetResult();
+    }
+
+    private Task QueueSettingsSaveAsync(AppSettings settings)
+    {
+        lock (_settingsSaveLock)
+        {
+            Task previousSaveTask = _pendingSettingsSaveTask;
+            Task currentSaveTask = SaveSettingsAfterAsync(previousSaveTask, settings);
+            _pendingSettingsSaveTask = currentSaveTask;
+            return currentSaveTask;
+        }
+    }
+
+    private async Task SaveSettingsAfterAsync(Task previousSaveTask, AppSettings settings)
+    {
+        try
+        {
+            await previousSaveTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Keep later saves flowing even if an earlier request failed.
+        }
+
+        await _settingsStore.SaveAsync(settings).ConfigureAwait(false);
         UpdateLastSettingsFileWriteTime();
     }
 

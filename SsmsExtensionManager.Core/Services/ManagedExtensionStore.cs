@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using SsmsExtensionManager.Core.Models;
 
@@ -5,14 +6,77 @@ namespace SsmsExtensionManager.Core.Services;
 
 public sealed class ManagedExtensionStore
 {
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _filePath;
+    private readonly SemaphoreSlim _fileLock;
 
     public ManagedExtensionStore(string? filePath = null)
     {
         _filePath = filePath ?? AppPaths.ManagedExtensionsFilePath;
+        _fileLock = FileLocks.GetOrAdd(Path.GetFullPath(_filePath), _ => new SemaphoreSlim(1, 1));
     }
 
     public async Task<IReadOnlyList<ManagedExtensionRecord>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await LoadUnlockedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task SaveAsync(IEnumerable<ManagedExtensionRecord> records, CancellationToken cancellationToken = default)
+    {
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SaveUnlockedAsync(records, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task UpsertAsync(ManagedExtensionRecord record, CancellationToken cancellationToken = default)
+    {
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            List<ManagedExtensionRecord> records = [.. await LoadUnlockedAsync(cancellationToken).ConfigureAwait(false)];
+            records.RemoveAll(existing => string.Equals(RecordKey(existing), RecordKey(record), StringComparison.OrdinalIgnoreCase));
+            records.Add(record);
+            await SaveUnlockedAsync(records, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task RemoveAsync(string ssmsInstanceId, string vsixId, CancellationToken cancellationToken = default)
+    {
+        await _fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            List<ManagedExtensionRecord> records = [.. await LoadUnlockedAsync(cancellationToken).ConfigureAwait(false)];
+            records.RemoveAll(existing =>
+                string.Equals(existing.SsmsInstanceId, ssmsInstanceId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Manifest.Id, vsixId, StringComparison.OrdinalIgnoreCase));
+            await SaveUnlockedAsync(records, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<ManagedExtensionRecord>> LoadUnlockedAsync(CancellationToken cancellationToken)
     {
         if (!File.Exists(_filePath))
         {
@@ -24,7 +88,7 @@ public sealed class ManagedExtensionStore
         return records ?? [];
     }
 
-    public async Task SaveAsync(IEnumerable<ManagedExtensionRecord> records, CancellationToken cancellationToken = default)
+    private async Task SaveUnlockedAsync(IEnumerable<ManagedExtensionRecord> records, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
         List<ManagedExtensionRecord> orderedRecords = records
@@ -35,23 +99,6 @@ public sealed class ManagedExtensionStore
 
         await using FileStream stream = File.Create(_filePath);
         await JsonSerializer.SerializeAsync(stream, orderedRecords, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task UpsertAsync(ManagedExtensionRecord record, CancellationToken cancellationToken = default)
-    {
-        List<ManagedExtensionRecord> records = [.. await LoadAsync(cancellationToken).ConfigureAwait(false)];
-        records.RemoveAll(existing => string.Equals(RecordKey(existing), RecordKey(record), StringComparison.OrdinalIgnoreCase));
-        records.Add(record);
-        await SaveAsync(records, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task RemoveAsync(string ssmsInstanceId, string vsixId, CancellationToken cancellationToken = default)
-    {
-        List<ManagedExtensionRecord> records = [.. await LoadAsync(cancellationToken).ConfigureAwait(false)];
-        records.RemoveAll(existing =>
-            string.Equals(existing.SsmsInstanceId, ssmsInstanceId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(existing.Manifest.Id, vsixId, StringComparison.OrdinalIgnoreCase));
-        await SaveAsync(records, cancellationToken).ConfigureAwait(false);
     }
 
     public static string RecordKey(ManagedExtensionRecord record) => $"{record.SsmsInstanceId}|{record.Manifest.Id}";
