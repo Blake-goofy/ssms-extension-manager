@@ -1688,9 +1688,11 @@ public partial class MainWindow : Window
     {
         using CancellationTokenSource? cancellationTokenSource = allowCancel ? new CancellationTokenSource() : null;
         _busyCancellationTokenSource = cancellationTokenSource;
+        Visibility previousFooterVisibility = FooterPanel.Visibility;
 
         try
         {
+            FooterPanel.Visibility = Visibility.Visible;
             BusyProgress.Visibility = Visibility.Visible;
             CancelBusyButton.Visibility = allowCancel ? Visibility.Visible : Visibility.Collapsed;
             CancelBusyButton.IsEnabled = allowCancel;
@@ -1721,6 +1723,7 @@ public partial class MainWindow : Window
             BusyProgress.Visibility = Visibility.Collapsed;
             CancelBusyButton.Visibility = Visibility.Collapsed;
             CancelBusyButton.IsEnabled = false;
+            FooterPanel.Visibility = _currentView == NavigationView.Browse ? previousFooterVisibility : Visibility.Visible;
         }
     }
 
