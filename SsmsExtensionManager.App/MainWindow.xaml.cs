@@ -79,8 +79,6 @@ public partial class MainWindow : Window
     private Task _pendingSettingsSaveTask = Task.CompletedTask;
 
     private static readonly Uri GalleryFeedUri = GalleryConstants.FeedUri;
-    private static readonly string DefaultSsmsLaunchExecutablePath = SsmsPaths.GetDefaultExecutablePath();
-
     public MainWindow()
     {
         InitializeComponent();
@@ -392,28 +390,40 @@ public partial class MainWindow : Window
 
     private void LaunchSsms_Click(object sender, RoutedEventArgs e)
     {
-        string? executablePath = ValueNormalization.EmptyToNull(_ssmsLaunchExecutablePath);
-        if (executablePath is null)
+        if (!SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+                _ssmsLaunchExecutablePath,
+                GetDetectedSsmsInstances(),
+                out string executablePath,
+                out string executablePathError))
         {
-            ShowLaunchSettingsError($"The SSMS executable path is not set. Open Settings to choose the {SsmsPaths.ExecutableFileName} start location.");
+            ShowLaunchSettingsError(executablePathError);
             return;
         }
 
-        if (!File.Exists(executablePath))
+        if (!SsmsLaunchSettingsValidator.TryNormalizeArguments(
+                _ssmsLaunchArguments,
+                out string launchArguments,
+                out string? argumentsError))
         {
-            ShowLaunchSettingsError($"The configured SSMS executable was not found:\n\n{executablePath}\n\nOpen Settings to update the start location.");
+            ShowLaunchSettingsError(argumentsError ?? "The configured SSMS launch arguments are not allowed.");
             return;
         }
 
         try
         {
-            Process.Start(new ProcessStartInfo
+            ProcessStartInfo startInfo = new()
             {
                 FileName = executablePath,
-                Arguments = _ssmsLaunchArguments,
                 WorkingDirectory = Path.GetDirectoryName(executablePath) ?? string.Empty,
                 UseShellExecute = false
-            });
+            };
+
+            foreach (string argument in SsmsLaunchSettingsValidator.ToArgumentList(launchArguments))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            Process.Start(startInfo);
         }
         catch (Exception ex)
         {
@@ -984,7 +994,13 @@ public partial class MainWindow : Window
             InstanceDropDownButton.IsEnabled = _instances.Count > 0;
             UpdateInstanceDropDownText();
 
+            bool launchSettingsChanged = NormalizeSsmsLaunchSettingsForDetectedInstances(instances);
             if (ApplyDetectedSsmsLaunchExecutablePathDefault(instances))
+            {
+                launchSettingsChanged = true;
+            }
+
+            if (launchSettingsChanged)
             {
                 await SaveSettingsAsync();
             }
@@ -1031,6 +1047,49 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool NormalizeSsmsLaunchSettingsForDetectedInstances(IReadOnlyList<SsmsInstance> instances)
+    {
+        bool changed = false;
+        string? executablePath = ValueNormalization.EmptyToNull(_ssmsLaunchExecutablePath);
+        if (executablePath is not null)
+        {
+            if (SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+                    executablePath,
+                    instances,
+                    out string normalizedExecutablePath,
+                    out _))
+            {
+                if (!string.Equals(_ssmsLaunchExecutablePath, normalizedExecutablePath, StringComparison.Ordinal))
+                {
+                    _ssmsLaunchExecutablePath = normalizedExecutablePath;
+                    SetSsmsLaunchExecutablePathText(normalizedExecutablePath);
+                    changed = true;
+                }
+            }
+            else
+            {
+                _ssmsLaunchExecutablePath = null;
+                SetSsmsLaunchExecutablePathText(string.Empty);
+                _settingsStatusText = "Ignored an unsafe SSMS launch executable path from settings.";
+                changed = true;
+            }
+        }
+
+        if (!SsmsLaunchSettingsValidator.TryNormalizeArguments(_ssmsLaunchArguments, out string normalizedArguments, out _))
+        {
+            normalizedArguments = string.Empty;
+        }
+
+        if (!string.Equals(_ssmsLaunchArguments, normalizedArguments, StringComparison.Ordinal))
+        {
+            _ssmsLaunchArguments = normalizedArguments;
+            SetSsmsLaunchArgumentsText(normalizedArguments);
+            changed = true;
+        }
+
+        return changed;
+    }
+
     private string? DetectSsmsLaunchExecutablePath(IReadOnlyList<SsmsInstance> instances)
     {
         IEnumerable<SsmsInstance> orderedInstances = _selectedInstance is null
@@ -1046,10 +1105,11 @@ public partial class MainWindow : Window
             }
         }
 
-        return File.Exists(DefaultSsmsLaunchExecutablePath)
-            ? DefaultSsmsLaunchExecutablePath
-            : null;
+        return null;
     }
+
+    private IEnumerable<SsmsInstance> GetDetectedSsmsInstances()
+        => _instances.Select(instance => instance.Instance);
 
     private async Task LoadGalleryAsync(bool force)
     {
@@ -2470,16 +2530,52 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ssmsLaunchExecutablePath = ValueNormalization.EmptyToNull(SsmsLaunchExecutablePathTextBox.Text);
-        _ssmsLaunchArguments = SsmsLaunchArgumentsTextBox.Text;
+        bool valid = true;
+        string? statusText = null;
+
+        if (ValueNormalization.EmptyToNull(SsmsLaunchExecutablePathTextBox.Text) is null)
+        {
+            _ssmsLaunchExecutablePath = null;
+        }
+        else if (SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+                     SsmsLaunchExecutablePathTextBox.Text,
+                     GetDetectedSsmsInstances(),
+                     out string normalizedExecutablePath,
+                     out string executablePathError))
+        {
+            _ssmsLaunchExecutablePath = normalizedExecutablePath;
+        }
+        else
+        {
+            _ssmsLaunchExecutablePath = null;
+            valid = false;
+            statusText = executablePathError;
+        }
+
+        if (SsmsLaunchSettingsValidator.TryNormalizeArguments(
+                SsmsLaunchArgumentsTextBox.Text,
+                out string normalizedArguments,
+                out string? argumentsError))
+        {
+            _ssmsLaunchArguments = normalizedArguments;
+        }
+        else
+        {
+            _ssmsLaunchArguments = string.Empty;
+            valid = false;
+            statusText = argumentsError;
+        }
+
         await SaveSettingsAsync();
 
-        _settingsStatusText = sender switch
-        {
-            TextBox textBox when textBox == SsmsLaunchExecutablePathTextBox => "SSMS launch executable path updated.",
-            TextBox textBox when textBox == SsmsLaunchArgumentsTextBox => "SSMS launch arguments updated.",
-            _ => string.Empty
-        };
+        _settingsStatusText = valid
+            ? sender switch
+            {
+                TextBox textBox when textBox == SsmsLaunchExecutablePathTextBox => "SSMS launch executable path updated.",
+                TextBox textBox when textBox == SsmsLaunchArgumentsTextBox => "SSMS launch arguments updated.",
+                _ => string.Empty
+            }
+            : statusText ?? "SSMS launch settings were not saved because they are not allowed.";
         UpdateFooterText();
     }
 
@@ -2503,8 +2599,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ssmsLaunchExecutablePath = dialog.FileName;
-        SsmsLaunchExecutablePathTextBox.Text = dialog.FileName;
+        if (!SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+                dialog.FileName,
+                GetDetectedSsmsInstances(),
+                out string normalizedExecutablePath,
+                out string errorMessage))
+        {
+            ShowLaunchSettingsError(errorMessage);
+            return;
+        }
+
+        _ssmsLaunchExecutablePath = normalizedExecutablePath;
+        SsmsLaunchExecutablePathTextBox.Text = normalizedExecutablePath;
         await SaveSettingsAsync();
         _settingsStatusText = "SSMS launch executable path updated.";
         UpdateFooterText();
@@ -2513,6 +2619,34 @@ public partial class MainWindow : Window
     private void UpdateSsmsLaunchArgumentsPlaceholderVisibility()
     {
         WpfUiHelpers.UpdatePlaceholderVisibility(SsmsLaunchArgumentsPlaceholderText, SsmsLaunchArgumentsTextBox);
+    }
+
+    private void SetSsmsLaunchExecutablePathText(string text)
+    {
+        _isInitializingSettingsControls = true;
+        try
+        {
+            SsmsLaunchExecutablePathTextBox.Text = text;
+        }
+        finally
+        {
+            _isInitializingSettingsControls = false;
+        }
+    }
+
+    private void SetSsmsLaunchArgumentsText(string text)
+    {
+        _isInitializingSettingsControls = true;
+        try
+        {
+            SsmsLaunchArgumentsTextBox.Text = text;
+        }
+        finally
+        {
+            _isInitializingSettingsControls = false;
+        }
+
+        UpdateSsmsLaunchArgumentsPlaceholderVisibility();
     }
 
     private void UpdateApplicationUpdateButton()
@@ -2566,16 +2700,36 @@ public partial class MainWindow : Window
         return $"{count} {label}";
     }
 
-    private AppSettings BuildCurrentSettings() => new(
-        _preferredInstanceId,
-        ShowMicrosoftExtensionsCheckBox?.IsChecked ?? _showMicrosoftExtensions,
-        DarkThemeCheckBox?.IsChecked ?? _darkTheme,
-        CaptureWindowPlacement(),
-        CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
-        _manageViewMode,
-        _browseViewMode,
-        ValueNormalization.EmptyToNull(SsmsLaunchExecutablePathTextBox?.Text) ?? _ssmsLaunchExecutablePath,
-        SsmsLaunchArgumentsTextBox?.Text ?? _ssmsLaunchArguments);
+    private AppSettings BuildCurrentSettings()
+    {
+        string? executablePath = null;
+        string executablePathText = SsmsLaunchExecutablePathTextBox?.Text ?? _ssmsLaunchExecutablePath ?? string.Empty;
+        if (SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+                executablePathText,
+                GetDetectedSsmsInstances(),
+                out string normalizedExecutablePath,
+                out _))
+        {
+            executablePath = normalizedExecutablePath;
+        }
+
+        string argumentsText = SsmsLaunchArgumentsTextBox?.Text ?? _ssmsLaunchArguments;
+        if (!SsmsLaunchSettingsValidator.TryNormalizeArguments(argumentsText, out string normalizedArguments, out _))
+        {
+            normalizedArguments = string.Empty;
+        }
+
+        return new AppSettings(
+            _preferredInstanceId,
+            ShowMicrosoftExtensionsCheckBox?.IsChecked ?? _showMicrosoftExtensions,
+            DarkThemeCheckBox?.IsChecked ?? _darkTheme,
+            CaptureWindowPlacement(),
+            CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
+            _manageViewMode,
+            _browseViewMode,
+            executablePath,
+            normalizedArguments);
+    }
 
     private WindowPlacementSettings CaptureWindowPlacement()
     {

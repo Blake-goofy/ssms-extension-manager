@@ -618,6 +618,112 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public async Task AppSettingsStore_DropsUnsupportedSsmsLaunchSettings()
+    {
+        string tempRoot = CreateTempRoot();
+        AppSettingsStore store = new(Path.Combine(tempRoot, "settings.json"));
+        var settings = new AppSettings(
+            "SSMS22.Test",
+            true,
+            false,
+            null,
+            true,
+            AppSettings.ManageViewModeTiles,
+            AppSettings.ManageViewModeList,
+            @"C:\Windows\System32\cmd.exe",
+            "--instance malicious");
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Null(loaded.SsmsLaunchExecutablePath);
+        Assert.Equal(string.Empty, loaded.SsmsLaunchArguments);
+    }
+
+    [Fact]
+    public void SsmsLaunchSettingsValidator_AllowsDetectedSsmsExecutable()
+    {
+        string tempRoot = CreateTempRoot();
+        string installationPath = Path.Combine(tempRoot, "SSMS22", "Release");
+        string executablePath = SsmsPaths.GetExecutablePath(installationPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
+        File.WriteAllText(executablePath, string.Empty);
+        SsmsInstance instance = new("SSMS22.Test", "SSMS 22 Test", "22.0", installationPath, []);
+
+        bool valid = SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+            executablePath,
+            [instance],
+            out string normalizedPath,
+            out _);
+
+        Assert.True(valid);
+        Assert.Equal(Path.GetFullPath(executablePath), normalizedPath);
+    }
+
+    [Fact]
+    public void SsmsLaunchSettingsValidator_RejectsSsmsExecutableOutsideDetectedRoots()
+    {
+        string tempRoot = CreateTempRoot();
+        string installationPath = Path.Combine(tempRoot, "SSMS22", "Release");
+        string detectedExecutablePath = SsmsPaths.GetExecutablePath(installationPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(detectedExecutablePath)!);
+        File.WriteAllText(detectedExecutablePath, string.Empty);
+
+        string otherExecutablePath = Path.Combine(tempRoot, "Other", "Common7", "IDE", SsmsPaths.ExecutableFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(otherExecutablePath)!);
+        File.WriteAllText(otherExecutablePath, string.Empty);
+        SsmsInstance instance = new("SSMS22.Test", "SSMS 22 Test", "22.0", installationPath, []);
+
+        bool valid = SsmsLaunchSettingsValidator.TryValidateExecutablePathForLaunch(
+            otherExecutablePath,
+            [instance],
+            out _,
+            out string errorMessage);
+
+        Assert.False(valid);
+        Assert.Contains("detected", errorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SsmsLaunchSettingsValidator_RejectsNetworkExecutablePaths()
+    {
+        bool valid = SsmsLaunchSettingsValidator.TryNormalizeExecutablePath(
+            @"\\server\share\SSMS.exe",
+            out string? normalizedPath,
+            out string? errorMessage);
+
+        Assert.False(valid);
+        Assert.Null(normalizedPath);
+        Assert.Contains("Network", errorMessage);
+    }
+
+    [Theory]
+    [InlineData("", "")]
+    [InlineData("-nosplash", "-nosplash")]
+    [InlineData("/nosplash", "-nosplash")]
+    [InlineData("-NoSplash", "-nosplash")]
+    public void SsmsLaunchSettingsValidator_AllowsKnownArguments(string arguments, string expected)
+    {
+        bool valid = SsmsLaunchSettingsValidator.TryNormalizeArguments(arguments, out string normalizedArguments, out _);
+
+        Assert.True(valid);
+        Assert.Equal(expected, normalizedArguments);
+    }
+
+    [Theory]
+    [InlineData("--instance malicious")]
+    [InlineData("-nosplash --instance malicious")]
+    [InlineData("\"-nosplash\"")]
+    public void SsmsLaunchSettingsValidator_RejectsUnsupportedArguments(string arguments)
+    {
+        bool valid = SsmsLaunchSettingsValidator.TryNormalizeArguments(arguments, out string normalizedArguments, out string? errorMessage);
+
+        Assert.False(valid);
+        Assert.Equal(string.Empty, normalizedArguments);
+        Assert.Contains("-nosplash", errorMessage);
+    }
+
+    [Fact]
     public async Task AppSettingsStore_NormalizesWindowPlacementPrecision()
     {
         string tempRoot = CreateTempRoot();
@@ -691,7 +797,7 @@ public sealed class CoreServiceTests
 
         Assert.StartsWith("SSMS22.", loaded.SelectedSsmsInstanceId);
         Assert.StartsWith(@"C:\Tools\SSMS", loaded.SsmsLaunchExecutablePath);
-        Assert.StartsWith("--instance ", loaded.SsmsLaunchArguments);
+        Assert.Equal(string.Empty, loaded.SsmsLaunchArguments);
     }
 
     private static string CreateTempRoot()

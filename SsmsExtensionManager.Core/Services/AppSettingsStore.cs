@@ -141,12 +141,21 @@ public sealed class AppSettingsStore
 
     private static AppSettings Normalize(AppSettings settings)
     {
+        _ = SsmsLaunchSettingsValidator.TryNormalizeExecutablePath(
+            settings.SsmsLaunchExecutablePath,
+            out string? normalizedSsmsLaunchExecutablePath,
+            out _);
+        _ = SsmsLaunchSettingsValidator.TryNormalizeArguments(
+            settings.SsmsLaunchArguments,
+            out string normalizedSsmsLaunchArguments,
+            out _);
+
         settings = settings with
         {
             ManageViewMode = AppSettings.NormalizeViewMode(settings.ManageViewMode),
             BrowseViewMode = AppSettings.NormalizeViewMode(settings.BrowseViewMode),
-            SsmsLaunchExecutablePath = ValueNormalization.EmptyToNull(settings.SsmsLaunchExecutablePath),
-            SsmsLaunchArguments = settings.SsmsLaunchArguments ?? string.Empty
+            SsmsLaunchExecutablePath = normalizedSsmsLaunchExecutablePath,
+            SsmsLaunchArguments = normalizedSsmsLaunchArguments
         };
 
         if (settings.WindowPlacement is not { } placement)
