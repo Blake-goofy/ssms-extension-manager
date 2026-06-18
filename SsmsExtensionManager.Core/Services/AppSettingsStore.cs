@@ -49,7 +49,9 @@ public sealed class AppSettingsStore
         settings = settings with
         {
             ManageViewMode = NormalizeViewMode(settings.ManageViewMode),
-            BrowseViewMode = NormalizeViewMode(settings.BrowseViewMode)
+            BrowseViewMode = NormalizeViewMode(settings.BrowseViewMode),
+            SsmsLaunchExecutablePath = EmptyToNull(settings.SsmsLaunchExecutablePath),
+            SsmsLaunchArguments = settings.SsmsLaunchArguments ?? string.Empty
         };
 
         if (settings.WindowPlacement is not { } placement)
@@ -75,4 +77,10 @@ public sealed class AppSettingsStore
         => string.Equals(value, AppSettings.ManageViewModeList, StringComparison.OrdinalIgnoreCase)
             ? AppSettings.ManageViewModeList
             : AppSettings.ManageViewModeTiles;
+
+    private static string? EmptyToNull(string? value)
+    {
+        value = value?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 }

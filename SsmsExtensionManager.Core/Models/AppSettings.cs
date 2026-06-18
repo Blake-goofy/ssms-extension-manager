@@ -7,12 +7,14 @@ public sealed record AppSettings(
     WindowPlacementSettings? WindowPlacement,
     bool CheckForApplicationUpdates = true,
     string ManageViewMode = AppSettings.ManageViewModeTiles,
-    string BrowseViewMode = AppSettings.ManageViewModeTiles)
+    string BrowseViewMode = AppSettings.ManageViewModeTiles,
+    string? SsmsLaunchExecutablePath = null,
+    string SsmsLaunchArguments = "")
 {
     public const string ManageViewModeTiles = "Tiles";
     public const string ManageViewModeList = "List";
 
-    public static AppSettings Default { get; } = new(null, false, true, null, true, ManageViewModeTiles, ManageViewModeTiles);
+    public static AppSettings Default { get; } = new(null, false, true, null, true, ManageViewModeTiles, ManageViewModeTiles, null, "");
 }
 
 public sealed record WindowPlacementSettings(

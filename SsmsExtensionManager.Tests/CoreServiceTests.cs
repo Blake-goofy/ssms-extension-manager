@@ -309,6 +309,8 @@ public sealed class CoreServiceTests
         Assert.True(loaded.WindowPlacement.IsMaximized);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.BrowseViewMode);
+        Assert.Null(loaded.SsmsLaunchExecutablePath);
+        Assert.Equal(string.Empty, loaded.SsmsLaunchArguments);
     }
 
     [Fact]
@@ -332,6 +334,8 @@ public sealed class CoreServiceTests
         Assert.True(loaded.CheckForApplicationUpdates);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.ManageViewMode);
         Assert.Equal(AppSettings.ManageViewModeTiles, loaded.BrowseViewMode);
+        Assert.Null(loaded.SsmsLaunchExecutablePath);
+        Assert.Equal(string.Empty, loaded.SsmsLaunchArguments);
         Assert.Null(loaded.WindowPlacement);
     }
 
@@ -389,6 +393,29 @@ public sealed class CoreServiceTests
 
         Assert.Equal(AppSettings.ManageViewModeList, loaded.ManageViewMode);
         Assert.Equal(AppSettings.ManageViewModeList, loaded.BrowseViewMode);
+    }
+
+    [Fact]
+    public async Task AppSettingsStore_SavesSsmsLaunchSettings()
+    {
+        string tempRoot = CreateTempRoot();
+        AppSettingsStore store = new(Path.Combine(tempRoot, "settings.json"));
+        var settings = new AppSettings(
+            "SSMS22.Test",
+            true,
+            false,
+            null,
+            true,
+            AppSettings.ManageViewModeTiles,
+            AppSettings.ManageViewModeList,
+            @"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\SSMS.exe",
+            "-nosplash");
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(@"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\SSMS.exe", loaded.SsmsLaunchExecutablePath);
+        Assert.Equal("-nosplash", loaded.SsmsLaunchArguments);
     }
 
     [Fact]

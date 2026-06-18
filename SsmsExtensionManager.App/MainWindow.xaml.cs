@@ -58,6 +58,8 @@ public partial class MainWindow : Window
     private bool _checkForApplicationUpdates = true;
     private bool _showMicrosoftExtensions;
     private bool _darkTheme;
+    private string? _ssmsLaunchExecutablePath;
+    private string _ssmsLaunchArguments = string.Empty;
     private string _manageViewMode = AppSettings.ManageViewModeTiles;
     private string _browseViewMode = AppSettings.ManageViewModeTiles;
     private string? _preferredInstanceId;
@@ -68,6 +70,13 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _busyCancellationTokenSource;
 
     private static readonly Uri GalleryFeedUri = new("https://ssmsgallery.azurewebsites.net/feed/");
+    private static readonly string DefaultSsmsLaunchExecutablePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        "Microsoft SQL Server Management Studio 22",
+        "Release",
+        "Common7",
+        "IDE",
+        "SSMS.exe");
 
     public MainWindow()
     {
@@ -96,6 +105,8 @@ public partial class MainWindow : Window
         _showMicrosoftExtensions = settings.ShowMicrosoftExtensions;
         _darkTheme = settings.DarkTheme;
         _checkForApplicationUpdates = settings.CheckForApplicationUpdates;
+        _ssmsLaunchExecutablePath = settings.SsmsLaunchExecutablePath;
+        _ssmsLaunchArguments = settings.SsmsLaunchArguments;
         _manageViewMode = NormalizeViewMode(settings.ManageViewMode);
         _browseViewMode = NormalizeViewMode(settings.BrowseViewMode);
         _preferredInstanceId = settings.SelectedSsmsInstanceId;
@@ -107,9 +118,12 @@ public partial class MainWindow : Window
         ShowMicrosoftExtensionsCheckBox.IsChecked = _showMicrosoftExtensions;
         DarkThemeCheckBox.IsChecked = _darkTheme;
         CheckForAppUpdatesCheckBox.IsChecked = _checkForApplicationUpdates;
+        SsmsLaunchExecutablePathTextBox.Text = _ssmsLaunchExecutablePath ?? string.Empty;
+        SsmsLaunchArgumentsTextBox.Text = _ssmsLaunchArguments;
         _isInitializingSettingsControls = false;
+        UpdateSsmsLaunchArgumentsPlaceholderVisibility();
         ApplyWindowPlacement(settings.WindowPlacement);
-        await RefreshAsync();
+        await RefreshAsync(disableWindow: false);
         ApplyNavigation();
         if (_checkForApplicationUpdates || _appUpdateService.IsTestMode)
         {
@@ -394,6 +408,37 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         SetCurrentView(NavigationView.Settings);
+    }
+
+    private void LaunchSsms_Click(object sender, RoutedEventArgs e)
+    {
+        string? executablePath = EmptyToNull(_ssmsLaunchExecutablePath);
+        if (executablePath is null)
+        {
+            ShowLaunchSettingsError("The SSMS executable path is not set. Open Settings to choose the SSMS.exe start location.");
+            return;
+        }
+
+        if (!File.Exists(executablePath))
+        {
+            ShowLaunchSettingsError($"The configured SSMS executable was not found:\n\n{executablePath}\n\nOpen Settings to update the start location.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = executablePath,
+                Arguments = _ssmsLaunchArguments,
+                WorkingDirectory = Path.GetDirectoryName(executablePath) ?? string.Empty,
+                UseShellExecute = false
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowLaunchSettingsError($"Unable to launch SSMS. {ex.Message}");
+        }
     }
 
     private async void EditSettingsJson_Click(object sender, RoutedEventArgs e)
@@ -938,7 +983,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(bool disableWindow = true)
     {
         await RunBusyAsync("Detecting SSMS 22...", async () =>
         {
@@ -959,6 +1004,11 @@ public partial class MainWindow : Window
             InstanceDropDownButton.IsEnabled = _instances.Count > 0;
             UpdateInstanceDropDownText();
 
+            if (ApplyDetectedSsmsLaunchExecutablePathDefault(instances))
+            {
+                await SaveSettingsAsync();
+            }
+
             if (_selectedInstance is null)
             {
                 _allExtensions.Clear();
@@ -968,9 +1018,56 @@ public partial class MainWindow : Window
             }
             else
             {
-                await LoadExtensionsAsync(checkUpdates: true);
+                await LoadExtensionsAsync(checkUpdates: true, disableWindow: disableWindow);
             }
-        });
+        }, disableWindow: disableWindow);
+    }
+
+    private bool ApplyDetectedSsmsLaunchExecutablePathDefault(IReadOnlyList<SsmsInstance> instances)
+    {
+        if (!string.IsNullOrWhiteSpace(_ssmsLaunchExecutablePath))
+        {
+            return false;
+        }
+
+        string? detectedPath = DetectSsmsLaunchExecutablePath(instances);
+        if (detectedPath is null)
+        {
+            return false;
+        }
+
+        _ssmsLaunchExecutablePath = detectedPath;
+        _isInitializingSettingsControls = true;
+        try
+        {
+            SsmsLaunchExecutablePathTextBox.Text = detectedPath;
+        }
+        finally
+        {
+            _isInitializingSettingsControls = false;
+        }
+
+        return true;
+    }
+
+    private string? DetectSsmsLaunchExecutablePath(IReadOnlyList<SsmsInstance> instances)
+    {
+        IEnumerable<SsmsInstance> orderedInstances = _selectedInstance is null
+            ? instances
+            : new[] { _selectedInstance.Instance }.Concat(instances.Where(instance => !string.Equals(instance.Id, _selectedInstance.Instance.Id, StringComparison.OrdinalIgnoreCase)));
+
+        foreach (SsmsInstance instance in orderedInstances)
+        {
+            string candidate = Path.Combine(instance.InstallationPath, "Common7", "IDE", "SSMS.exe");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return File.Exists(DefaultSsmsLaunchExecutablePath)
+            ? DefaultSsmsLaunchExecutablePath
+            : null;
     }
 
     private async Task LoadGalleryAsync(bool force)
@@ -1202,7 +1299,7 @@ public partial class MainWindow : Window
     private async Task LoadExtensionsAfterMutationAsync(IReadOnlyCollection<string>? refreshLatestIds = null)
         => await LoadExtensionsAsync(checkUpdates: false, refreshLatestIds);
 
-    private async Task LoadExtensionsAsync(bool checkUpdates = false, IReadOnlyCollection<string>? refreshLatestIds = null)
+    private async Task LoadExtensionsAsync(bool checkUpdates = false, IReadOnlyCollection<string>? refreshLatestIds = null, bool disableWindow = true)
     {
         if (_selectedInstance is not { } instance)
         {
@@ -1360,7 +1457,7 @@ public partial class MainWindow : Window
             {
                 RefreshGalleryInstallStates();
             }
-        });
+        }, disableWindow: disableWindow);
     }
 
     private void ApplyExtensionFilter()
@@ -1728,7 +1825,6 @@ public partial class MainWindow : Window
     {
         using CancellationTokenSource? cancellationTokenSource = allowCancel ? new CancellationTokenSource() : null;
         _busyCancellationTokenSource = cancellationTokenSource;
-        Visibility previousFooterVisibility = FooterPanel.Visibility;
 
         try
         {
@@ -1763,13 +1859,14 @@ public partial class MainWindow : Window
             BusyProgress.Visibility = Visibility.Collapsed;
             CancelBusyButton.Visibility = Visibility.Collapsed;
             CancelBusyButton.IsEnabled = false;
-            FooterPanel.Visibility = _currentView == NavigationView.Browse ? previousFooterVisibility : Visibility.Visible;
+            FooterPanel.Visibility = _currentView == NavigationView.Browse ? Visibility.Collapsed : Visibility.Visible;
         }
     }
 
     private void SetMainInputEnabled(bool enabled)
     {
         MainMenu.IsEnabled = enabled;
+        LaunchSsmsButton.IsEnabled = enabled;
         NavigationPanel.IsEnabled = enabled;
         PageHeaderPanel.IsEnabled = enabled;
         ViewHost.IsEnabled = enabled;
@@ -1791,6 +1888,79 @@ public partial class MainWindow : Window
     {
         StatusText.Text = message;
         MessageBox.Show(this, message, "SSMS Extension Manager", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void ShowLaunchSettingsError(string message)
+    {
+        StatusText.Text = message;
+
+        Window dialog = new()
+        {
+            Title = "Launch SSMS",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            MinWidth = 420
+        };
+
+        Border root = new()
+        {
+            Padding = new Thickness(18)
+        };
+        root.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        root.SetResourceReference(TextElement.ForegroundProperty, "ControlForegroundBrush");
+
+        Grid layout = new();
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        TextBlock messageText = new()
+        {
+            Text = message,
+            MaxWidth = 520,
+            TextWrapping = TextWrapping.Wrap
+        };
+        Grid.SetRow(messageText, 0);
+        layout.Children.Add(messageText);
+
+        StackPanel buttons = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 18, 0, 0)
+        };
+
+        Button openSettingsButton = new()
+        {
+            Content = "Open Settings",
+            IsDefault = true,
+            Padding = new Thickness(12, 6, 12, 6),
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        openSettingsButton.Click += (_, _) => dialog.DialogResult = true;
+
+        Button closeButton = new()
+        {
+            Content = "Close",
+            IsCancel = true,
+            Padding = new Thickness(12, 6, 12, 6)
+        };
+        closeButton.Click += (_, _) => dialog.DialogResult = false;
+
+        buttons.Children.Add(openSettingsButton);
+        buttons.Children.Add(closeButton);
+        Grid.SetRow(buttons, 1);
+        layout.Children.Add(buttons);
+        root.Child = layout;
+        dialog.Content = root;
+
+        if (dialog.ShowDialog() == true)
+        {
+            SetCurrentView(NavigationView.Settings);
+            SsmsLaunchExecutablePathTextBox.Focus();
+            SsmsLaunchExecutablePathTextBox.SelectAll();
+        }
     }
 
     private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
@@ -2105,6 +2275,67 @@ public partial class MainWindow : Window
         UpdateFooterText();
     }
 
+    private async void SsmsLaunchSettings_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateSsmsLaunchArgumentsPlaceholderVisibility();
+
+        if (!IsLoaded || _isInitializingSettingsControls)
+        {
+            return;
+        }
+
+        _ssmsLaunchExecutablePath = EmptyToNull(SsmsLaunchExecutablePathTextBox.Text);
+        _ssmsLaunchArguments = SsmsLaunchArgumentsTextBox.Text;
+        await SaveSettingsAsync();
+
+        _settingsStatusText = sender switch
+        {
+            TextBox textBox when textBox == SsmsLaunchExecutablePathTextBox => "SSMS launch executable path updated.",
+            TextBox textBox when textBox == SsmsLaunchArgumentsTextBox => "SSMS launch arguments updated.",
+            _ => string.Empty
+        };
+        UpdateFooterText();
+    }
+
+    private async void BrowseSsmsLaunchExecutable_Click(object sender, RoutedEventArgs e)
+    {
+        OpenFileDialog dialog = new()
+        {
+            Filter = "SSMS executable (SSMS.exe)|SSMS.exe|Executable files (*.exe)|*.exe|All files (*.*)|*.*",
+            FileName = Path.GetFileName(_ssmsLaunchExecutablePath) ?? "SSMS.exe",
+            Title = "Choose SSMS executable"
+        };
+
+        string? currentDirectory = Path.GetDirectoryName(_ssmsLaunchExecutablePath);
+        if (!string.IsNullOrWhiteSpace(currentDirectory) && Directory.Exists(currentDirectory))
+        {
+            dialog.InitialDirectory = currentDirectory;
+        }
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        _ssmsLaunchExecutablePath = dialog.FileName;
+        SsmsLaunchExecutablePathTextBox.Text = dialog.FileName;
+        await SaveSettingsAsync();
+        _settingsStatusText = "SSMS launch executable path updated.";
+        UpdateFooterText();
+    }
+
+    private void UpdateSsmsLaunchArgumentsPlaceholderVisibility()
+    {
+        if (SsmsLaunchArgumentsPlaceholderText is null || SsmsLaunchArgumentsTextBox is null)
+        {
+            return;
+        }
+
+        SsmsLaunchArgumentsPlaceholderText.Visibility = string.IsNullOrWhiteSpace(SsmsLaunchArgumentsTextBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private void UpdateApplicationUpdateButton()
     {
         if (UpdateAppButton is null)
@@ -2179,7 +2410,9 @@ public partial class MainWindow : Window
         CaptureWindowPlacement(),
         CheckForAppUpdatesCheckBox?.IsChecked ?? _checkForApplicationUpdates,
         _manageViewMode,
-        _browseViewMode);
+        _browseViewMode,
+        EmptyToNull(SsmsLaunchExecutablePathTextBox?.Text) ?? _ssmsLaunchExecutablePath,
+        SsmsLaunchArgumentsTextBox?.Text ?? _ssmsLaunchArguments);
 
     private WindowPlacementSettings CaptureWindowPlacement()
     {

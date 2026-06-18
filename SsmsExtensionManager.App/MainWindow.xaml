@@ -339,49 +339,59 @@
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
-        <Menu x:Name="MainMenu" DockPanel.Dock="Top">
-            <MenuItem Header="_File">
-                <MenuItem Header="_Install VSIX/ZIP" Click="InstallLocal_Click" />
-                <Separator />
-                <MenuItem Header="E_xit" Click="Exit_Click" />
-            </MenuItem>
-            <MenuItem Header="_View">
-                <MenuItem Header="_Refresh" Click="Refresh_Click" />
-                <MenuItem Header="_Update All" Click="UpdateAll_Click" />
-                <Separator />
-                <MenuItem Header="_Settings" Click="Settings_Click" />
-                <MenuItem Header="Edit Settings as _JSON" Click="EditSettingsJson_Click" />
-            </MenuItem>
-            <MenuItem Header="_Selection">
-                <MenuItem x:Name="SelectionUpdateMenuItem" Header="_Update" Click="UpdateSelected_Click" />
-                <MenuItem x:Name="SelectionReinstallMenuItem" Header="_Reinstall" Click="Reinstall_Click" />
-                <MenuItem x:Name="SelectionSetSourceMenuItem" Header="Edit _Source" Click="SetSource_Click" />
-                <MenuItem x:Name="SelectionUninstallMenuItem" Header="_Uninstall" Click="Uninstall_Click" />
-                <Separator />
-                <MenuItem x:Name="SelectionRemoveMenuItem" Header="Re_move from List" Click="RemoveFromList_Click" />
-            </MenuItem>
-            <MenuItem Header="_Help">
-                <MenuItem Header="_Check for Application Updates" Click="CheckApplicationUpdates_Click" />
-                <Separator />
-                <MenuItem Header="_Help" Click="Help_Click" />
-            </MenuItem>
-            <MenuItem x:Name="UpdateAppButton"
-                      Style="{StaticResource AppUpdateMenuItemStyle}"
-                      Visibility="Collapsed"
-                      Click="UpdateAppButton_Click"
-                      ToolTip="Application update available">
-                <MenuItem.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="UpdateAppButtonText"
-                                   Text="Update"
-                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" />
-                    </StackPanel>
-                </MenuItem.Header>
-            </MenuItem>
-        </Menu>
+        <DockPanel DockPanel.Dock="Top"
+                   Background="{DynamicResource ControlBackgroundBrush}">
+            <Button x:Name="LaunchSsmsButton"
+                    Content="Launch SSMS"
+                    DockPanel.Dock="Right"
+                    Margin="4,2,4,2"
+                    Padding="10,2"
+                    VerticalAlignment="Center"
+                    Click="LaunchSsms_Click" />
 
-        <Grid Margin="18"
-              TextElement.Foreground="{DynamicResource ControlForegroundBrush}">
+            <Menu x:Name="MainMenu">
+                <MenuItem Header="_File">
+                    <MenuItem Header="_Install VSIX/ZIP" Click="InstallLocal_Click" />
+                    <Separator />
+                    <MenuItem Header="E_xit" Click="Exit_Click" />
+                </MenuItem>
+                <MenuItem Header="_View">
+                    <MenuItem Header="_Refresh" Click="Refresh_Click" />
+                    <MenuItem Header="_Update All" Click="UpdateAll_Click" />
+                    <Separator />
+                    <MenuItem Header="_Settings" Click="Settings_Click" />
+                    <MenuItem Header="Edit Settings as _JSON" Click="EditSettingsJson_Click" />
+                </MenuItem>
+                <MenuItem Header="_Selection">
+                    <MenuItem x:Name="SelectionUpdateMenuItem" Header="_Update" Click="UpdateSelected_Click" />
+                    <MenuItem x:Name="SelectionReinstallMenuItem" Header="_Reinstall" Click="Reinstall_Click" />
+                    <MenuItem x:Name="SelectionSetSourceMenuItem" Header="Edit _Source" Click="SetSource_Click" />
+                    <MenuItem x:Name="SelectionUninstallMenuItem" Header="_Uninstall" Click="Uninstall_Click" />
+                    <Separator />
+                    <MenuItem x:Name="SelectionRemoveMenuItem" Header="Re_move from List" Click="RemoveFromList_Click" />
+                </MenuItem>
+                <MenuItem Header="_Help">
+                    <MenuItem Header="_Check for Application Updates" Click="CheckApplicationUpdates_Click" />
+                    <Separator />
+                    <MenuItem Header="_Help" Click="Help_Click" />
+                </MenuItem>
+                <MenuItem x:Name="UpdateAppButton"
+                          Style="{StaticResource AppUpdateMenuItemStyle}"
+                          Visibility="Collapsed"
+                          Click="UpdateAppButton_Click"
+                          ToolTip="Application update available">
+                    <MenuItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="UpdateAppButtonText"
+                                       Text="Update"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" />
+                        </StackPanel>
+                    </MenuItem.Header>
+                </MenuItem>
+            </Menu>
+        </DockPanel>
+
+        <Grid TextElement.Foreground="{DynamicResource ControlForegroundBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
@@ -390,18 +400,9 @@
             <Border x:Name="NavigationPanel"
                     Grid.Column="0"
                     Background="{DynamicResource PanelBackgroundBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
                     Padding="12,14"
-                    Margin="0,0,18,0">
+                    Margin="0">
                 <StackPanel>
-                    <DockPanel Margin="0,0,0,2">
-                        <TextBlock Text="Menu"
-                                   FontSize="12"
-                                   FontWeight="Bold"
-                                   Foreground="{DynamicResource MutedForegroundBrush}" />
-                    </DockPanel>
                     <Button x:Name="ManageNavButton"
                             Style="{StaticResource GhostNavButtonStyle}"
                             HorizontalAlignment="Stretch"
@@ -455,7 +456,8 @@
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Column="1">
+            <Grid Grid.Column="1"
+                  Margin="18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -883,6 +885,10 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
@@ -990,6 +996,45 @@
                                   Margin="0,14,0,0"
                                   Checked="SettingsControl_Changed"
                                   Unchecked="SettingsControl_Changed" />
+
+                        <TextBlock Grid.Row="4"
+                                   Text="SSMS launch executable path"
+                                   FontWeight="SemiBold"
+                                   Margin="0,22,0,6" />
+
+                        <Grid Grid.Row="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox x:Name="SsmsLaunchExecutablePathTextBox"
+                                     MinWidth="520"
+                                     VerticalContentAlignment="Center"
+                                     TextChanged="SsmsLaunchSettings_TextChanged" />
+                            <Button Grid.Column="1"
+                                    Content="Browse..."
+                                    Margin="8,0,0,0"
+                                    Padding="10,5"
+                                    Click="BrowseSsmsLaunchExecutable_Click" />
+                        </Grid>
+
+                        <TextBlock Grid.Row="6"
+                                   Text="Launch arguments"
+                                   FontWeight="SemiBold"
+                                   Margin="0,16,0,6" />
+
+                        <Grid Grid.Row="7">
+                            <TextBox x:Name="SsmsLaunchArgumentsTextBox"
+                                     MinWidth="520"
+                                     VerticalContentAlignment="Center"
+                                     TextChanged="SsmsLaunchSettings_TextChanged" />
+                            <TextBlock x:Name="SsmsLaunchArgumentsPlaceholderText"
+                                       Text="Example: -nosplash"
+                                       Margin="5,0,0,0"
+                                       Foreground="{DynamicResource MutedForegroundBrush}"
+                                       IsHitTestVisible="False" />
+                        </Grid>
 
                     </Grid>
                 </Grid>
