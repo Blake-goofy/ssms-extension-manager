@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using SsmsExtensionManager.Core.Models;
 
@@ -6,15 +5,13 @@ namespace SsmsExtensionManager.Core.Services;
 
 public sealed class UpdateSourceStore
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new(StringComparer.OrdinalIgnoreCase);
-
     private readonly string _filePath;
     private readonly SemaphoreSlim _fileLock;
 
     public UpdateSourceStore(string? filePath = null)
     {
         _filePath = filePath ?? AppPaths.ExtensionSourcesFilePath;
-        _fileLock = FileLocks.GetOrAdd(Path.GetFullPath(_filePath), _ => new SemaphoreSlim(1, 1));
+        _fileLock = NamedFileLock.GetOrAdd(_filePath);
     }
 
     public async Task<IReadOnlyDictionary<string, UpdateSource>> LoadAsync(CancellationToken cancellationToken = default)

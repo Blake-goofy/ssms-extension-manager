@@ -1015,6 +1015,7 @@ public partial class MainWindow : Window
             }
             else
             {
+                await ShowCachedExtensionsAsync(_selectedInstance.Instance);
                 await LoadExtensionsAsync(checkUpdates: true, disableWindow: disableWindow);
             }
         }, disableWindow: disableWindow);
@@ -1418,6 +1419,33 @@ public partial class MainWindow : Window
             && string.Equals(left.Uri, right.Uri, StringComparison.OrdinalIgnoreCase);
     }
 
+    private async Task ShowCachedExtensionsAsync(SsmsInstance instance)
+    {
+        if (_allExtensions.Count > 0)
+        {
+            return; // already have live data, skip
+        }
+
+        try
+        {
+            IReadOnlyList<ManagedExtensionRecord> records = await _managedStore.LoadAsync();
+            List<ExtensionRow> cached = records
+                .Where(r => string.Equals(r.SsmsInstanceId, instance.Id, StringComparison.OrdinalIgnoreCase))
+                .Select(r => new ExtensionRow(instance, null, r, null, null))
+                .ToList();
+
+            if (cached.Count > 0 && _allExtensions.Count == 0)
+            {
+                _allExtensions.AddRange(cached);
+                ApplyExtensionFilter();
+            }
+        }
+        catch
+        {
+            // ponytail: swallow — cached display is best-effort, real scan follows
+        }
+    }
+
     private async Task LoadExtensionsAfterMutationAsync(IReadOnlyCollection<string>? refreshLatestIds = null)
         => await LoadExtensionsAsync(checkUpdates: false, refreshLatestIds);
 
@@ -1650,6 +1678,9 @@ public partial class MainWindow : Window
             {
                 RefreshGalleryInstallStates();
             }
+
+            // ponytail: fire-and-forget prefetch so gallery is ready when the user navigates there
+            _ = LoadGalleryAsync(force: false);
         }, disableWindow: disableWindow);
     }
 

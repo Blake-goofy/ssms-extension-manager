@@ -33,7 +33,7 @@ public static class GalleryExtensionMatcher
         }
 
         return string.Equals(manifest.DisplayName.Trim(), galleryExtension.DisplayName.Trim(), StringComparison.OrdinalIgnoreCase)
-            && PublisherKey(manifest.Publisher) == PublisherKey(galleryExtension.Author);
+            && ValueNormalization.PublisherKey(manifest.Publisher) == ValueNormalization.PublisherKey(galleryExtension.Author);
     }
 
     public static UpdateSource? KeepCompatibleSource(UpdateSource? source, GalleryExtension? galleryExtension)
@@ -68,18 +68,4 @@ public static class GalleryExtensionMatcher
                 UriFormat.Unescaped,
                 StringComparison.OrdinalIgnoreCase) == 0;
 
-    private static string PublisherKey(string publisher)
-    {
-        string key = publisher.Trim().ToUpperInvariant();
-        foreach (string token in new[] { " CORPORATION", " CORP.", " CORP" })
-        {
-            if (key.EndsWith(token, StringComparison.Ordinal))
-            {
-                key = key[..^token.Length].TrimEnd();
-                break;
-            }
-        }
-
-        return key;
-    }
 }

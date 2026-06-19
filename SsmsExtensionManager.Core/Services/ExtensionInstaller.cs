@@ -23,10 +23,9 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
         }
 
         VsixInstallerResult installerResult = RunVsixInstaller(instance, BuildInstallArguments(asset.FilePath), cancellationToken);
+
         if (!installerResult.Success && IsAlreadyInstalledFailure(installerResult.ExitCode, installerResult.LogText))
-        {
-            installerResult = RunVsixInstaller(instance, BuildInteractiveInstallArguments(asset.FilePath), cancellationToken, useShellExecute: true);
-        }
+            return OperationResult.Fail($"{asset.Manifest.DisplayName} {asset.Manifest.Version} is already installed.");
 
         return installerResult.Success
             ? OperationResult.Ok($"Install complete for {asset.Manifest.DisplayName} {asset.Manifest.Version}.")
@@ -133,8 +132,6 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
     }
 
     internal static string BuildInstallArguments(string assetPath) => $"/quiet {QuoteArgument(assetPath)}";
-
-    private static string BuildInteractiveInstallArguments(string assetPath) => QuoteArgument(assetPath);
 
     private static string BuildUninstallArguments(string extensionId) => $"/quiet /u:{extensionId}";
 

@@ -56,13 +56,11 @@ public sealed class PackageCache
         }
     }
 
+    private static readonly HashSet<char> InvalidFileNameChars = Path.GetInvalidFileNameChars().ToHashSet();
+
     private static string SafePathPart(string value)
     {
-        foreach (char invalid in Path.GetInvalidFileNameChars())
-        {
-            value = value.Replace(invalid, '-');
-        }
-
+        value = new string(value.Select(c => InvalidFileNameChars.Contains(c) ? '-' : c).ToArray());
         return string.IsNullOrWhiteSpace(value) ? "Unknown" : value.Trim();
     }
 }

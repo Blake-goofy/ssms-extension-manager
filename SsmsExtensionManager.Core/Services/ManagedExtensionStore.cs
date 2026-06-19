@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using SsmsExtensionManager.Core.Models;
 
@@ -6,8 +5,6 @@ namespace SsmsExtensionManager.Core.Services;
 
 public sealed class ManagedExtensionStore
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new(StringComparer.OrdinalIgnoreCase);
-
     private readonly string _filePath;
     private readonly string _packageCacheRoot;
     private readonly SemaphoreSlim _fileLock;
@@ -16,7 +13,7 @@ public sealed class ManagedExtensionStore
     {
         _filePath = filePath ?? AppPaths.ManagedExtensionsFilePath;
         _packageCacheRoot = packageCacheRoot ?? AppPaths.PackageCacheRoot;
-        _fileLock = FileLocks.GetOrAdd(Path.GetFullPath(_filePath), _ => new SemaphoreSlim(1, 1));
+        _fileLock = NamedFileLock.GetOrAdd(_filePath);
     }
 
     public async Task<IReadOnlyList<ManagedExtensionRecord>> LoadAsync(CancellationToken cancellationToken = default)

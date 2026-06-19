@@ -54,7 +54,8 @@ public sealed class AppSettingsStore
         _ioGate.Wait();
         try
         {
-            SaveCore(Normalize(settings));
+            // ponytail: GetAwaiter().GetResult() is safe here; SaveCoreAsync uses ConfigureAwait(false) throughout
+            SaveCoreAsync(Normalize(settings), CancellationToken.None).GetAwaiter().GetResult();
         }
         finally
         {
@@ -74,29 +75,6 @@ public sealed class AppSettingsStore
             {
                 await JsonSerializer.SerializeAsync(stream, settings, JsonOptions.Default, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            ReplaceSettingsFile(tempFilePath);
-        }
-        catch
-        {
-            TryDeleteTempFile(tempFilePath);
-            throw;
-        }
-    }
-
-    private void SaveCore(AppSettings settings)
-    {
-        string directoryPath = GetDirectoryPath();
-        Directory.CreateDirectory(directoryPath);
-        string tempFilePath = GetTempFilePath(directoryPath);
-
-        try
-        {
-            using (FileStream stream = File.Create(tempFilePath))
-            {
-                JsonSerializer.Serialize(stream, settings, JsonOptions.Default);
-                stream.Flush();
             }
 
             ReplaceSettingsFile(tempFilePath);

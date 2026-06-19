@@ -12,7 +12,7 @@ public static class VsixUpdateIdentityPolicy
             return false;
         }
 
-        if (PublisherKey(candidate.Publisher) != PublisherKey(expected.Publisher))
+        if (ValueNormalization.PublisherKey(candidate.Publisher) != ValueNormalization.PublisherKey(expected.Publisher))
         {
             errorMessage = $"Downloaded VSIX publisher '{candidate.Publisher}' does not match expected publisher '{expected.Publisher}'.";
             return false;
@@ -25,18 +25,4 @@ public static class VsixUpdateIdentityPolicy
     public static bool IsTrustedUpdate(VsixManifest expected, VsixManifest candidate)
         => TryValidateUpdate(expected, candidate, out _);
 
-    private static string PublisherKey(string publisher)
-    {
-        string key = publisher.Trim().ToUpperInvariant();
-        foreach (string token in new[] { " CORPORATION", " CORP.", " CORP" })
-        {
-            if (key.EndsWith(token, StringComparison.Ordinal))
-            {
-                key = key[..^token.Length].TrimEnd();
-                break;
-            }
-        }
-
-        return key;
-    }
 }
