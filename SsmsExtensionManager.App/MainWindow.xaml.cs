@@ -79,6 +79,9 @@ public partial class MainWindow : Window
     private Task _pendingSettingsSaveTask = Task.CompletedTask;
 
     private static readonly Uri GalleryFeedUri = GalleryConstants.FeedUri;
+    private const string MaximizeIconGeometry = "M 1 1 L 9 1 L 9 9 L 1 9 Z";
+    private const string RestoreIconGeometry = "M 3 1 L 9 1 L 9 7 M 1 3 L 7 3 L 7 9 L 1 9 Z";
+
     public MainWindow()
     {
         InitializeComponent();
@@ -99,6 +102,8 @@ public partial class MainWindow : Window
         ApplyBrowseViewMode();
         UpdateSelectionActionState();
         Title = $"SSMS Extension Manager {AppBuildInfo.Version}";
+        TitleBarTitleText.Text = Title;
+        UpdateMaximizeWindowButton();
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -607,6 +612,34 @@ public partial class MainWindow : Window
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void MinimizeWindow_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void MaximizeWindow_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void Window_StateChanged(object sender, EventArgs e) => UpdateMaximizeWindowButton();
+
+    private void UpdateMaximizeWindowButton()
+    {
+        if (MaximizeWindowIcon is null || MaximizeWindowButton is null || WindowButtonsPanel is null)
+        {
+            return;
+        }
+
+        bool isMaximized = WindowState == WindowState.Maximized;
+        MaximizeWindowIcon.Data = Geometry.Parse(isMaximized ? RestoreIconGeometry : MaximizeIconGeometry);
+        MaximizeWindowButton.ToolTip = isMaximized ? "Restore" : "Maximize";
+        WindowButtonsPanel.Margin = isMaximized
+            ? new Thickness(0, 0, SystemParameters.ResizeFrameVerticalBorderWidth, 0)
+            : new Thickness(0);
+    }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
@@ -2174,6 +2207,7 @@ public partial class MainWindow : Window
     private void SetMainInputEnabled(bool enabled)
     {
         MainMenu.IsEnabled = enabled;
+        UpdateAppButton.IsEnabled = enabled;
         LaunchSsmsButton.IsEnabled = enabled;
         NavigationPanel.IsEnabled = enabled;
         PageHeaderPanel.IsEnabled = enabled;

@@ -12,6 +12,7 @@
         <SolidColorBrush x:Key="ButtonPressedBrush" Color="#DCEBFF" />
         <SolidColorBrush x:Key="DisabledControlBackgroundBrush" Color="#F3F4F6" />
         <SolidColorBrush x:Key="MutedForegroundBrush" Color="#4B5563" />
+        <SolidColorBrush x:Key="TitleBarForegroundBrush" Color="#4B5563" />
         <SolidColorBrush x:Key="WarningForegroundBrush" Color="#7A3E00" />
         <SolidColorBrush x:Key="BorderBrush" Color="#D1D5DB" />
         <SolidColorBrush x:Key="GridLineBrush" Color="#E5E7EB" />
@@ -26,9 +27,15 @@
         <SolidColorBrush x:Key="PrimaryActionHoverBrush" Color="#1177BB" />
         <SolidColorBrush x:Key="PrimaryActionPressedBrush" Color="#0B578A" />
         <SolidColorBrush x:Key="PrimaryActionForegroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="LaunchActionBrush" Color="#111111" />
+        <SolidColorBrush x:Key="LaunchActionHoverBrush" Color="#252525" />
+        <SolidColorBrush x:Key="LaunchActionPressedBrush" Color="#000000" />
+        <SolidColorBrush x:Key="LaunchActionForegroundBrush" Color="#FFFFFF" />
         <StreamGeometry x:Key="TileViewIconGeometry">M1,1 L6,1 L6,6 L1,6 Z M8,1 L13,1 L13,6 L8,6 Z M1,8 L6,8 L6,13 L1,13 Z M8,8 L13,8 L13,13 L8,13 Z</StreamGeometry>
         <StreamGeometry x:Key="ListViewIconGeometry">M2,3 L14,3 M2,8 L14,8 M2,13 L14,13</StreamGeometry>
         <StreamGeometry x:Key="ChevronDownGeometry">M 0 1.5 L 5 4.5 L 10 1.5</StreamGeometry>
+        <StreamGeometry x:Key="MinimizeIconGeometry">M 1 5 L 9 5</StreamGeometry>
+        <StreamGeometry x:Key="CloseIconGeometry">M 1 1 L 9 9 M 9 1 L 1 9</StreamGeometry>
 
         <Style x:Key="PopupMenuBorderStyle" TargetType="{x:Type Border}">
             <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
@@ -133,15 +140,16 @@
 
         <Style TargetType="{x:Type Menu}">
             <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TitleBarForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="12.5" />
         </Style>
 
         <ControlTemplate x:Key="TopLevelMenuHeaderTemplate" TargetType="{x:Type MenuItem}">
             <Grid SnapsToDevicePixels="True">
                 <Border x:Name="Chrome"
                         Background="{TemplateBinding Background}"
+                        CornerRadius="4"
                         Padding="{TemplateBinding Padding}">
                     <ContentPresenter ContentSource="Header"
                                       HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -179,6 +187,7 @@
         <ControlTemplate x:Key="SubmenuItemTemplate" TargetType="{x:Type MenuItem}">
             <Border x:Name="Chrome"
                     Background="{TemplateBinding Background}"
+                    CornerRadius="4"
                     Padding="{TemplateBinding Padding}"
                     SnapsToDevicePixels="True">
                 <ContentPresenter ContentSource="Header"
@@ -200,6 +209,7 @@
             <Grid SnapsToDevicePixels="True">
                 <Border x:Name="Chrome"
                         Background="{TemplateBinding Background}"
+                        CornerRadius="4"
                         Padding="{TemplateBinding Padding}">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -247,17 +257,17 @@
 
         <Style TargetType="{x:Type MenuItem}">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TitleBarForegroundBrush}" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="Template" Value="{StaticResource SubmenuItemTemplate}" />
             <Style.Triggers>
                 <Trigger Property="Role" Value="TopLevelHeader">
-                    <Setter Property="Padding" Value="10,5" />
+                    <Setter Property="Padding" Value="8,3" />
                     <Setter Property="Template" Value="{StaticResource TopLevelMenuHeaderTemplate}" />
                 </Trigger>
                 <Trigger Property="Role" Value="TopLevelItem">
-                    <Setter Property="Padding" Value="10,5" />
+                    <Setter Property="Padding" Value="8,3" />
                 </Trigger>
                 <Trigger Property="Role" Value="SubmenuHeader">
                     <Setter Property="Template" Value="{StaticResource SubmenuHeaderTemplate}" />

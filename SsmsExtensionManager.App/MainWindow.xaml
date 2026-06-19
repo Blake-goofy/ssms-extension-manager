@@ -3,11 +3,21 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
-        Title="SSMS Extension Manager" Height="742" Width="1324"
+        Title="SSMS Extension Manager" Height="724.8" Width="1309.6"
         MinHeight="620" MinWidth="980"
         Loaded="Window_Loaded"
+        StateChanged="Window_StateChanged"
         PreviewMouseLeftButtonDown="Window_PreviewMouseLeftButtonDown">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36"
+                            CornerRadius="0"
+                            GlassFrameThickness="0"
+                            ResizeBorderThickness="6"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
     <Window.Resources>
         <Style TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -141,20 +151,29 @@
             <Setter Property="Padding" Value="8,3" />
         </Style>
 
-        <Style x:Key="AppUpdateMenuItemStyle" TargetType="{x:Type MenuItem}">
+        <Style x:Key="AppUpdateButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource AccentActionButtonStyle}">
             <Setter Property="Background" Value="{DynamicResource PrimaryActionBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource PrimaryActionForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource PrimaryActionBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="4,2,0,2" />
-            <Setter Property="Padding" Value="8,2" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Padding" Value="10,1" />
+        </Style>
+
+        <Style x:Key="LaunchActionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource LaunchActionBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource LaunchActionForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LaunchActionBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="10,1" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                    <ControlTemplate TargetType="{x:Type Button}">
                         <Border x:Name="Chrome"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
@@ -162,15 +181,18 @@
                                 CornerRadius="3"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter ContentSource="Header"
-                                              HorizontalAlignment="Center"
-                                              RecognizesAccessKey="True"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PrimaryActionHoverBrush}" />
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource PrimaryActionHoverBrush}" />
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource LaunchActionHoverBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource LaunchActionHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource LaunchActionPressedBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource LaunchActionPressedBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="{DynamicResource UnavailableRowForegroundBrush}" />
@@ -181,6 +203,59 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="CaptionButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="CloseCaptionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource CaptionButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#C42B1C" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#A4262C" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="CaptionIconPathStyle" TargetType="{x:Type Path}">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+            <Setter Property="StrokeThickness" Value="1.2" />
+            <Setter Property="StrokeStartLineCap" Value="Square" />
+            <Setter Property="StrokeEndLineCap" Value="Square" />
+            <Setter Property="StrokeLineJoin" Value="Miter" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
         </Style>
 
         <Style x:Key="ViewModeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
@@ -198,7 +273,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3"
+                                CornerRadius="0"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
@@ -339,17 +414,30 @@
     </Window.Resources>
 
     <DockPanel Background="{DynamicResource AppBackgroundBrush}">
-        <DockPanel DockPanel.Dock="Top"
-                   Background="{DynamicResource ControlBackgroundBrush}">
-            <Button x:Name="LaunchSsmsButton"
-                    Content="Launch SSMS"
-                    DockPanel.Dock="Right"
-                    Margin="4,2,4,2"
-                    Padding="10,2"
-                    VerticalAlignment="Center"
-                    Click="LaunchSsms_Click" />
+        <Grid DockPanel.Dock="Top"
+              Height="36"
+              Background="{DynamicResource ControlBackgroundBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <Menu x:Name="MainMenu">
+            <Image Grid.Column="0"
+                   Source="Assets/ssms-extension-manager.ico"
+                   Width="20"
+                   Height="20"
+                   Margin="20,8,12,0"
+                   VerticalAlignment="Top"
+                   IsHitTestVisible="False" />
+
+            <Menu x:Name="MainMenu"
+                  Grid.Column="1"
+                  Margin="0,8,0,0"
+                  VerticalAlignment="Top"
+                  shell:WindowChrome.IsHitTestVisibleInChrome="True">
                 <MenuItem Header="_File">
                     <MenuItem Header="_Install VSIX/ZIP" Click="InstallLocal_Click" />
                     <Separator />
@@ -375,21 +463,75 @@
                     <Separator />
                     <MenuItem Header="_Help" Click="Help_Click" />
                 </MenuItem>
-                <MenuItem x:Name="UpdateAppButton"
-                          Style="{StaticResource AppUpdateMenuItemStyle}"
-                          Visibility="Collapsed"
-                          Click="UpdateAppButton_Click"
-                          ToolTip="Application update available">
-                    <MenuItem.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="UpdateAppButtonText"
-                                       Text="Update"
-                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}" />
-                        </StackPanel>
-                    </MenuItem.Header>
-                </MenuItem>
             </Menu>
-        </DockPanel>
+
+            <TextBlock x:Name="TitleBarTitleText"
+                       Grid.Column="2"
+                       Text="SSMS Extension Manager"
+                       HorizontalAlignment="Center"
+                       Margin="0,9,0,0"
+                       VerticalAlignment="Top"
+                       FontSize="12.5"
+                       Foreground="{DynamicResource TitleBarForegroundBrush}"
+                       TextTrimming="CharacterEllipsis" />
+
+            <StackPanel Grid.Column="3"
+                        Orientation="Horizontal"
+                        Margin="0,7,0,0"
+                        VerticalAlignment="Top">
+                <Button x:Name="UpdateAppButton"
+                        Style="{StaticResource AppUpdateButtonStyle}"
+                        Visibility="Collapsed"
+                        Click="UpdateAppButton_Click"
+                        ToolTip="Application update available"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <TextBlock x:Name="UpdateAppButtonText"
+                               Text="Update"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
+
+                <Button x:Name="LaunchSsmsButton"
+                        Style="{StaticResource LaunchActionButtonStyle}"
+                        Content="Launch SSMS"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Top"
+                        Click="LaunchSsms_Click"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True" />
+            </StackPanel>
+
+            <StackPanel x:Name="WindowButtonsPanel"
+                        Grid.Column="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0"
+                        VerticalAlignment="Top"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button x:Name="MinimizeWindowButton"
+                        Style="{StaticResource CaptionButtonStyle}"
+                        ToolTip="Minimize"
+                        Click="MinimizeWindow_Click">
+                    <Path Style="{StaticResource CaptionIconPathStyle}"
+                          Data="{StaticResource MinimizeIconGeometry}" />
+                </Button>
+
+                <Button x:Name="MaximizeWindowButton"
+                        Style="{StaticResource CaptionButtonStyle}"
+                        ToolTip="Maximize"
+                        Click="MaximizeWindow_Click">
+                    <Path x:Name="MaximizeWindowIcon"
+                          Style="{StaticResource CaptionIconPathStyle}"
+                          Data="M 1 1 L 9 1 L 9 9 L 1 9 Z" />
+                </Button>
+
+                <Button x:Name="CloseWindowButton"
+                        Style="{StaticResource CloseCaptionButtonStyle}"
+                        ToolTip="Close"
+                        Click="CloseWindow_Click">
+                    <Path Style="{StaticResource CaptionIconPathStyle}"
+                          Data="{StaticResource CloseIconGeometry}" />
+                </Button>
+            </StackPanel>
+        </Grid>
 
         <Grid TextElement.Foreground="{DynamicResource ControlForegroundBrush}">
             <Grid.ColumnDefinitions>
@@ -481,9 +623,25 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                            <StackPanel DockPanel.Dock="Right"
-                                        Orientation="Horizontal">
+                        <StackPanel Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Margin="0,0,0,12">
+                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
+                                <TextBox x:Name="ManageSearchTextBox"
+                                         Padding="8,5"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="ManageSearchTextBox_TextChanged" />
+                                <TextBlock x:Name="ManageSearchPlaceholderText"
+                                           Text="Filter managed extensions"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                           IsHitTestVisible="False"
+                                           Visibility="Collapsed" />
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="14,0,0,0">
                                 <Button x:Name="ManageTilesViewButton"
                                         Style="{StaticResource ViewModeButtonStyle}"
                                         ToolTip="Tile view"
@@ -509,21 +667,7 @@
                                           Data="{StaticResource ListViewIconGeometry}" />
                                 </Button>
                             </StackPanel>
-
-                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
-                                <TextBox x:Name="ManageSearchTextBox"
-                                         Padding="8,5"
-                                         VerticalContentAlignment="Center"
-                                         TextChanged="ManageSearchTextBox_TextChanged" />
-                                <TextBlock x:Name="ManageSearchPlaceholderText"
-                                           Text="Filter managed extensions"
-                                           Margin="10,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource MutedForegroundBrush}"
-                                           IsHitTestVisible="False"
-                                           Visibility="Collapsed" />
-                            </Grid>
-                        </DockPanel>
+                        </StackPanel>
 
                         <ListBox x:Name="ManageTilesListBox"
                                  Grid.Row="1"
@@ -717,9 +861,25 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                            <StackPanel DockPanel.Dock="Right"
-                                        Orientation="Horizontal">
+                        <StackPanel Grid.Row="0"
+                                    Orientation="Horizontal"
+                                    Margin="0,0,0,12">
+                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
+                                <TextBox x:Name="GallerySearchTextBox"
+                                         Padding="8,5"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="GallerySearchTextBox_TextChanged" />
+                                <TextBlock x:Name="GallerySearchPlaceholderText"
+                                           Text="Filter gallery"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource MutedForegroundBrush}"
+                                           IsHitTestVisible="False"
+                                           Visibility="Collapsed" />
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="14,0,0,0">
                                 <Button x:Name="BrowseTilesViewButton"
                                         Style="{StaticResource ViewModeButtonStyle}"
                                         ToolTip="Tile view"
@@ -745,21 +905,7 @@
                                           Data="{StaticResource ListViewIconGeometry}" />
                                 </Button>
                             </StackPanel>
-
-                            <Grid Style="{StaticResource ExtensionFilterHostStyle}">
-                                <TextBox x:Name="GallerySearchTextBox"
-                                         Padding="8,5"
-                                         VerticalContentAlignment="Center"
-                                         TextChanged="GallerySearchTextBox_TextChanged" />
-                                <TextBlock x:Name="GallerySearchPlaceholderText"
-                                           Text="Filter gallery"
-                                           Margin="10,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource MutedForegroundBrush}"
-                                           IsHitTestVisible="False"
-                                           Visibility="Collapsed" />
-                            </Grid>
-                        </DockPanel>
+                        </StackPanel>
 
                         <ListBox x:Name="GalleryListBox"
                                  Grid.Row="1"
@@ -895,7 +1041,6 @@
                         <Grid Grid.Row="0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="320" />
-                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
                             <Button x:Name="InstanceDropDownButton"
@@ -934,49 +1079,24 @@
                                              ItemContainerStyle="{StaticResource PopupMenuListBoxItemStyle}" />
                                 </Border>
                             </Popup>
-
-                            <Button Grid.Column="1"
-                                    Content="Edit as JSON"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Center"
-                                    Padding="10,5"
-                                    Click="EditSettingsJson_Click" />
                         </Grid>
 
-                        <CheckBox Grid.Row="1"
-                                  x:Name="ShowMicrosoftExtensionsCheckBox"
-                                  Content="_Show extensions published by Microsoft"
-                                  Margin="0,14,0,0"
-                                  Checked="SettingsControl_Changed"
-                                  Unchecked="SettingsControl_Changed" />
-
-                        <CheckBox Grid.Row="2"
-                                  x:Name="DarkThemeCheckBox"
-                                  Content="_Dark theme"
-                                  Margin="0,14,0,0"
-                                  Checked="SettingsControl_Changed"
-                                  Unchecked="SettingsControl_Changed" />
-
-                        <CheckBox Grid.Row="3"
-                                  x:Name="CheckForAppUpdatesCheckBox"
-                                  Content="Check for application _updates on startup"
-                                  Margin="0,14,0,0"
-                                  Checked="SettingsControl_Changed"
-                                  Unchecked="SettingsControl_Changed" />
-
-                        <TextBlock Grid.Row="4"
+                        <TextBlock Grid.Row="1"
                                    Text="SSMS launch executable path"
                                    FontWeight="SemiBold"
-                                   Margin="0,22,0,6" />
+                                   Margin="0,18,0,6" />
 
-                        <Grid Grid.Row="5">
+                        <Grid Grid.Row="2"
+                              HorizontalAlignment="Left">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
                             <TextBox x:Name="SsmsLaunchExecutablePathTextBox"
                                      MinWidth="520"
+                                     MaxWidth="620"
+                                     HorizontalAlignment="Left"
                                      VerticalContentAlignment="Center"
                                      TextChanged="SsmsLaunchSettings_TextChanged" />
                             <Button Grid.Column="1"
@@ -986,14 +1106,17 @@
                                     Click="BrowseSsmsLaunchExecutable_Click" />
                         </Grid>
 
-                        <TextBlock Grid.Row="6"
+                        <TextBlock Grid.Row="3"
                                    Text="Launch arguments"
                                    FontWeight="SemiBold"
                                    Margin="0,16,0,6" />
 
-                        <Grid Grid.Row="7">
+                        <Grid Grid.Row="4"
+                              HorizontalAlignment="Left">
                             <TextBox x:Name="SsmsLaunchArgumentsTextBox"
                                      MinWidth="520"
+                                     MaxWidth="620"
+                                     HorizontalAlignment="Left"
                                      VerticalContentAlignment="Center"
                                      TextChanged="SsmsLaunchSettings_TextChanged" />
                             <TextBlock x:Name="SsmsLaunchArgumentsPlaceholderText"
@@ -1002,6 +1125,27 @@
                                        Foreground="{DynamicResource MutedForegroundBrush}"
                                        IsHitTestVisible="False" />
                         </Grid>
+
+                        <CheckBox Grid.Row="5"
+                                  x:Name="ShowMicrosoftExtensionsCheckBox"
+                                  Content="_Show extensions published by Microsoft"
+                                  Margin="0,18,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
+
+                        <CheckBox Grid.Row="6"
+                                  x:Name="DarkThemeCheckBox"
+                                  Content="_Dark theme"
+                                  Margin="0,14,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
+
+                        <CheckBox Grid.Row="7"
+                                  x:Name="CheckForAppUpdatesCheckBox"
+                                  Content="Check for application _updates on startup"
+                                  Margin="0,14,0,0"
+                                  Checked="SettingsControl_Changed"
+                                  Unchecked="SettingsControl_Changed" />
 
                     </Grid>
                 </Grid>
