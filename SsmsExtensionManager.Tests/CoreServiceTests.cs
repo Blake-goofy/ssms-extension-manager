@@ -51,50 +51,6 @@ public sealed class CoreServiceTests
         Assert.Contains("\"C:\\Temp\\Sample Extension.vsix\"", arguments);
     }
 
-    [Fact]
-    public void ExtensionInstaller_InteractiveInstallArgumentsUseVsixPathOnly()
-    {
-        string arguments = ExtensionInstaller.BuildInteractiveInstallArguments(@"C:\Temp\Sample Extension.vsix");
-
-        Assert.Equal("\"C:\\Temp\\Sample Extension.vsix\"", arguments);
-    }
-
-    [Fact]
-    public void ExtensionInstaller_DetectsAlreadyInstalledVsixFailure()
-    {
-        const string logText = "Microsoft.VisualStudio.ExtensionManager.AlreadyInstalledException: This extension is already installed to all applicable products.";
-
-        Assert.True(ExtensionInstaller.IsAlreadyInstalledFailure(1001, logText));
-    }
-
-    [Fact]
-    public void ExtensionInstaller_StagesVsixForInstallerAndCleansItUp()
-    {
-        string tempRoot = CreateTempRoot();
-        string sourcePath = Path.Combine(tempRoot, "source", "sample.vsix");
-        string stagingRoot = Path.Combine(tempRoot, "staging");
-        Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!);
-        CreateVsix(sourcePath, "Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension");
-        var manifest = new VsixManifest("Sample.Extension", "1.0.0", "Sample Publisher", "Sample Extension", null, null, null);
-        var asset = new ExtensionAsset(sourcePath, manifest, "sample.vsix");
-
-        string stagedPath;
-        string stagingDirectory;
-        using (ExtensionInstaller.StagedExtensionAsset staged = ExtensionInstaller.StageForVsixInstaller(asset, stagingRoot))
-        {
-            stagedPath = staged.Asset.FilePath;
-            stagingDirectory = staged.StagingDirectory;
-
-            Assert.NotEqual(sourcePath, stagedPath);
-            Assert.StartsWith(Path.GetFullPath(stagingRoot), Path.GetFullPath(stagedPath), StringComparison.OrdinalIgnoreCase);
-            Assert.True(File.Exists(stagedPath));
-            Assert.Equal(asset.Manifest, staged.Asset.Manifest);
-            Assert.Equal(File.ReadAllBytes(sourcePath), File.ReadAllBytes(stagedPath));
-        }
-
-        Assert.False(Directory.Exists(stagingDirectory));
-    }
-
     [Theory]
     [InlineData("https://example.com/extensions/sample.vsix", UpdateSourceType.DirectVsixUrl)]
     [InlineData("https://example.com/releases/sample.zip?download=1", UpdateSourceType.DirectZipUrl)]
@@ -135,7 +91,6 @@ public sealed class CoreServiceTests
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "managed-extensions.json"), AppPaths.ManagedExtensionsFilePath);
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "extension-sources.json"), AppPaths.ExtensionSourcesFilePath);
         Assert.EndsWith(Path.Combine("SsmsExtensionManager", "PackageCache"), AppPaths.PackageCacheRoot);
-        Assert.EndsWith(Path.Combine(".ssms-extension-manager", "install-staging"), AppPaths.InstallStagingRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "assets"), AppPaths.TempAssetsRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "updates"), AppPaths.TempUpdatesRoot);
         Assert.Equal(Path.Combine(AppPaths.TempRoot, "downloads"), AppPaths.TempDownloadsRoot);

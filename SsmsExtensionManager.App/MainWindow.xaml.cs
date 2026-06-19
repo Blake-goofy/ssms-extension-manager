@@ -181,10 +181,10 @@ public partial class MainWindow : Window
             }
 
             ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, AppPaths.TempAssetsRoot);
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, asset.FilePath, cancellationToken), cancellationToken);
+            string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
+            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
             if (result.Success)
             {
-                string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
                 await SaveRecordAsync(
                     instance.Instance,
                     asset.Manifest,

@@ -22,18 +22,10 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             return OperationResult.Fail(ex.Message);
         }
 
-        VsixInstallerResult installerResult;
-        try
+        VsixInstallerResult installerResult = RunVsixInstaller(instance, BuildInstallArguments(asset.FilePath), cancellationToken);
+        if (!installerResult.Success && IsAlreadyInstalledFailure(installerResult.ExitCode, installerResult.LogText))
         {
-            installerResult = InstallWithInteractiveFallback(instance, asset, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return OperationResult.Fail(ex.Message);
+            installerResult = RunVsixInstaller(instance, BuildInteractiveInstallArguments(asset.FilePath), cancellationToken, useShellExecute: true);
         }
 
         return installerResult.Success
@@ -63,19 +55,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             return OperationResult.Fail(identityError);
         }
 
-        VsixInstallerResult installerResult;
-        try
-        {
-            installerResult = InstallWithInteractiveFallback(installedExtension.SsmsInstance, asset, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return OperationResult.Fail(ex.Message);
-        }
+        VsixInstallerResult installerResult = RunVsixInstaller(installedExtension.SsmsInstance, BuildInstallArguments(asset.FilePath), cancellationToken);
 
         return installerResult.Success
             ? OperationResult.Ok($"Update complete for {asset.Manifest.DisplayName} {asset.Manifest.Version}.")
@@ -90,20 +70,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             : OperationResult.Fail(installerResult.Message);
     }
 
-    private static VsixInstallerResult InstallWithInteractiveFallback(SsmsInstance instance, ExtensionAsset asset, CancellationToken cancellationToken)
-    {
-        using StagedExtensionAsset stagedAsset = StageForVsixInstaller(asset, AppPaths.InstallStagingRoot);
-
-        VsixInstallerResult installerResult = RunVsixInstaller(instance, BuildInstallArguments(stagedAsset.Asset.FilePath), cancellationToken);
-        if (installerResult.Success || !IsAlreadyInstalledFailure(installerResult.ExitCode, installerResult.LogText))
-        {
-            return installerResult;
-        }
-
-        return RunVsixInstaller(instance, BuildInteractiveInstallArguments(stagedAsset.Asset.FilePath), cancellationToken);
-    }
-
-    private static VsixInstallerResult RunVsixInstaller(SsmsInstance instance, string arguments, CancellationToken cancellationToken)
+    private static VsixInstallerResult RunVsixInstaller(SsmsInstance instance, string arguments, CancellationToken cancellationToken, bool useShellExecute = false)
     {
         string installerPath = SsmsPaths.GetVsixInstallerPath(instance.InstallationPath);
         if (!File.Exists(installerPath))
@@ -112,17 +79,18 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        DateTime logSearchStartUtc = DateTime.UtcNow.AddSeconds(-2);
 
         using Process process = new()
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = installerPath,
-                Arguments = arguments
+                Arguments = arguments,
+                UseShellExecute = useShellExecute
             }
         };
 
+        DateTime logSearchStartUtc = DateTime.UtcNow;
         try
         {
             process.Start();
@@ -166,54 +134,16 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
 
     internal static string BuildInstallArguments(string assetPath) => $"/quiet {QuoteArgument(assetPath)}";
 
-    internal static string BuildInteractiveInstallArguments(string assetPath) => QuoteArgument(assetPath);
+    private static string BuildInteractiveInstallArguments(string assetPath) => QuoteArgument(assetPath);
 
     private static string BuildUninstallArguments(string extensionId) => $"/quiet /u:{extensionId}";
 
-    private static string QuoteArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
-
-    internal static bool IsAlreadyInstalledFailure(int exitCode, string logText)
+    private static bool IsAlreadyInstalledFailure(int exitCode, string logText)
         => exitCode == 1001
-            && (logText.Contains("AlreadyInstalledException", StringComparison.OrdinalIgnoreCase)
-                || logText.Contains("already installed to all applicable products", StringComparison.OrdinalIgnoreCase));
+            || logText.Contains("AlreadyInstalledException", StringComparison.OrdinalIgnoreCase)
+            || logText.Contains("already installed", StringComparison.OrdinalIgnoreCase);
 
-    internal static StagedExtensionAsset StageForVsixInstaller(ExtensionAsset asset, string stagingRoot)
-    {
-        if (!File.Exists(asset.FilePath))
-        {
-            throw new FileNotFoundException("VSIX file was not found.", asset.FilePath);
-        }
-
-        string stagingDirectory = Path.Combine(stagingRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(stagingDirectory);
-
-        string fileName = SafeVsixFileName(Path.GetFileName(asset.FilePath), asset.Manifest.Id);
-        string stagedPath = Path.Combine(stagingDirectory, fileName);
-        File.Copy(asset.FilePath, stagedPath, overwrite: false);
-
-        return new StagedExtensionAsset(
-            asset with { FilePath = stagedPath },
-            stagingDirectory);
-    }
-
-    private static string SafeVsixFileName(string? preferredName, string fallbackName)
-    {
-        string fileName = string.IsNullOrWhiteSpace(preferredName)
-            ? $"{fallbackName}{ExtensionPackageSource.VsixExtension}"
-            : preferredName;
-
-        foreach (char invalid in Path.GetInvalidFileNameChars())
-        {
-            fileName = fileName.Replace(invalid, '-');
-        }
-
-        if (!Path.GetExtension(fileName).Equals(ExtensionPackageSource.VsixExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            fileName += ExtensionPackageSource.VsixExtension;
-        }
-
-        return fileName;
-    }
+    private static string QuoteArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
 
     private static string ReadRecentVsixInstallerLogs(DateTime startUtc)
     {
@@ -276,27 +206,5 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
 
         public static VsixInstallerResult Fail(int exitCode, string logText, string message)
             => new(false, exitCode, logText, message);
-    }
-
-    internal sealed class StagedExtensionAsset(ExtensionAsset asset, string stagingDirectory) : IDisposable
-    {
-        public ExtensionAsset Asset { get; } = asset;
-
-        public string StagingDirectory { get; } = stagingDirectory;
-
-        public void Dispose()
-        {
-            try
-            {
-                if (Directory.Exists(StagingDirectory))
-                {
-                    Directory.Delete(StagingDirectory, recursive: true);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup; a running installer or scanner can briefly hold the file.
-            }
-        }
     }
 }
