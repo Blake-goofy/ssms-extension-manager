@@ -691,20 +691,21 @@
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
-                                            <Border Width="76"
+                                            <Border x:Name="ManageTileIconHost"
+                                                    Width="76"
                                                     Height="76"
                                                     Background="Transparent"
-                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4">
+                                                    CornerRadius="10">
                                                 <Grid>
-                                                    <TextBlock Text="{Binding Initials}"
+                                                    <TextBlock x:Name="ManageTileInitialsText"
+                                                               Text="{Binding Initials}"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
                                                                FontSize="19"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource MutedForegroundBrush}" />
-                                                    <Image Source="{Binding IconSource}"
+                                                    <Image x:Name="ManageTileIconImage"
+                                                           Source="{Binding IconSource}"
                                                            Stretch="Uniform"
                                                            Margin="5"
                                                            SnapsToDevicePixels="True"
@@ -785,6 +786,14 @@
                                         </StackPanel>
                                     </Grid>
                                     <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IconSource}" Value="{x:Null}">
+                                            <Setter TargetName="ManageTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="ManageTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Visibility, ElementName=ManageTileIconImage}" Value="Collapsed">
+                                            <Setter TargetName="ManageTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="ManageTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                        </DataTrigger>
                                         <DataTrigger Binding="{Binding HasAvailableUpdate}" Value="True">
                                             <Setter TargetName="TileUpdateButton" Property="Visibility" Value="Visible" />
                                         </DataTrigger>
@@ -926,20 +935,21 @@
                                                 <ColumnDefinition Width="88" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <Border Width="76"
+                                            <Border x:Name="GalleryTileIconHost"
+                                                    Width="76"
                                                     Height="76"
                                                     Background="Transparent"
-                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4">
+                                                    CornerRadius="10">
                                                 <Grid>
-                                                    <TextBlock Text="{Binding Initials}"
+                                                    <TextBlock x:Name="GalleryTileInitialsText"
+                                                               Text="{Binding Initials}"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
                                                                FontSize="19"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource MutedForegroundBrush}" />
-                                                    <Image Source="{Binding IconSource}"
+                                                    <Image x:Name="GalleryTileIconImage"
+                                                           Source="{Binding IconSource}"
                                                            Stretch="Uniform"
                                                            Margin="5"
                                                            SnapsToDevicePixels="True"
@@ -990,6 +1000,16 @@
                                                     Click="InstallGalleryExtension_Click" />
                                         </StackPanel>
                                     </Grid>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IconSource}" Value="{x:Null}">
+                                            <Setter TargetName="GalleryTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="GalleryTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Visibility, ElementName=GalleryTileIconImage}" Value="Collapsed">
+                                            <Setter TargetName="GalleryTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="GalleryTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>

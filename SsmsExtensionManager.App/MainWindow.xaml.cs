@@ -484,12 +484,7 @@ public partial class MainWindow : Window
 
     private void Help_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(
-            this,
-            "Use extension cards or list rows to update, reinstall, uninstall, edit update sources, or remove an uninstalled extension from the list.\n\nThe app caches VSIX packages that it installs or updates so those extensions can be reinstalled later. Extensions installed outside this app can be shown after uninstall, but they need a configured source before reinstall is reliable.\n\nUse File > Install VSIX/ZIP to install a local VSIX or ZIP containing one VSIX. Update sources can be a GitHub repository or a direct downloadable .vsix/.zip link. Use View > Refresh to rescan SSMS, View > Update All to apply available installed-extension updates, and View > Settings to choose the SSMS instance or show Microsoft-published extensions.",
-            "SSMS Extension Manager Help",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        OpenExternalUri(new Uri("https://github.com/Blake-goofy/ssms-extension-manager#readme"));
     }
 
     private async Task RefreshApplicationUpdateStateAsync(bool interactive, bool promptToApply, bool confirmBeforeApply = true)

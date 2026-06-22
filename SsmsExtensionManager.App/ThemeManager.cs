@@ -42,6 +42,7 @@ internal static class ThemeManager
         SetBrush(resources, "SelectionBackgroundBrush", palette.SelectionBackground);
         SetBrush(resources, "SelectionForegroundBrush", palette.SelectionForeground);
         SetBrush(resources, "MenuItemHoverBrush", palette.MenuItemHover);
+        SetBrush(resources, "FallbackIconBackgroundBrush", palette.FallbackIconBackground);
         SetBrush(resources, "UnavailableRowBackgroundBrush", palette.UnavailableRowBackground);
         SetBrush(resources, "UnavailableRowForegroundBrush", palette.UnavailableRowForeground);
         SetBrush(resources, "HyperlinkBrush", palette.Hyperlink);
@@ -164,6 +165,7 @@ internal static class ThemeManager
         Color SelectionBackground,
         Color SelectionForeground,
         Color MenuItemHover,
+        Color FallbackIconBackground,
         Color UnavailableRowBackground,
         Color UnavailableRowForeground,
         Color Hyperlink,
@@ -194,6 +196,7 @@ internal static class ThemeManager
             Color.FromRgb(0xE8, 0xF1, 0xFF),
             Color.FromRgb(0x1F, 0x29, 0x37),
             Color.FromRgb(0xEA, 0xF2, 0xFF),
+            Color.FromRgb(0xE5, 0xE7, 0xEB),
             Color.FromRgb(0xF5, 0xF5, 0xF5),
             Color.FromRgb(0x6B, 0x72, 0x80),
             Color.FromRgb(0x0B, 0x57, 0xD0),
@@ -224,6 +227,7 @@ internal static class ThemeManager
             Color.FromRgb(0x24, 0x32, 0x46),
             Color.FromRgb(0xE5, 0xE7, 0xEB),
             Color.FromRgb(0x2D, 0x40, 0x59),
+            Color.FromRgb(0x33, 0x41, 0x55),
             Color.FromRgb(0x18, 0x24, 0x33),
             Color.FromRgb(0xA7, 0xB1, 0xC2),
             Color.FromRgb(0x8A, 0xC7, 0xFF),

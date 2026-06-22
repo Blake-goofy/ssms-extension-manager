@@ -20,6 +20,7 @@
         <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#E8F1FF" />
         <SolidColorBrush x:Key="SelectionForegroundBrush" Color="#1F2937" />
         <SolidColorBrush x:Key="MenuItemHoverBrush" Color="#EAF2FF" />
+        <SolidColorBrush x:Key="FallbackIconBackgroundBrush" Color="#E5E7EB" />
         <SolidColorBrush x:Key="UnavailableRowBackgroundBrush" Color="#F5F5F5" />
         <SolidColorBrush x:Key="UnavailableRowForegroundBrush" Color="#6B7280" />
         <SolidColorBrush x:Key="HyperlinkBrush" Color="#0B57D0" />
@@ -257,16 +258,18 @@
 
         <Style TargetType="{x:Type MenuItem}">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{DynamicResource TitleBarForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="Template" Value="{StaticResource SubmenuItemTemplate}" />
             <Style.Triggers>
                 <Trigger Property="Role" Value="TopLevelHeader">
+                    <Setter Property="Foreground" Value="{DynamicResource TitleBarForegroundBrush}" />
                     <Setter Property="Padding" Value="8,3" />
                     <Setter Property="Template" Value="{StaticResource TopLevelMenuHeaderTemplate}" />
                 </Trigger>
                 <Trigger Property="Role" Value="TopLevelItem">
+                    <Setter Property="Foreground" Value="{DynamicResource TitleBarForegroundBrush}" />
                     <Setter Property="Padding" Value="8,3" />
                 </Trigger>
                 <Trigger Property="Role" Value="SubmenuHeader">

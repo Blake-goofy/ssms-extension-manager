@@ -1,59 +1,35 @@
-# SSMS Extension Manager
+# <img src="SsmsExtensionManager.App/Assets/ssms-extension-manager.ico" alt="SSMS Extension Manager icon" height="32"> SSMS Extension Manager
 
-A standalone C# WPF app for managing third-party SSMS 22+ VSIX extensions.
+Manage third-party SSMS 22+ extensions without digging through extension folders, VSIX manifests, or release pages.
 
-## Current Scope
+![Browse view screenshot](images/browse.png)
 
-- Detects SSMS 22+ installations through `vswhere.exe`, with a default install-path fallback.
-- Scans SSMS 22 per-machine and per-user extension roots for `extension.vsixmanifest`.
-- Displays installed extension identity, publisher, installed version, latest version, scope, and update source.
-- Stores user-supplied update sources under `%LocalAppData%\SsmsExtensionManager\extension-sources.json`.
-- Supports GitHub repository releases and direct `.vsix`/`.zip` URLs as update sources.
-- Supports installing a local `.vsix` or `.zip` containing one `.vsix`.
-- Supports updating selected extensions or all detected updates.
-- Supports uninstall through the SSMS `VSIXInstaller.exe /u:<VSIX id>` path.
-- Keeps uninstalled managed extensions visible so they can be reinstalled later.
-- Caches VSIX packages installed or updated through the app under `%LocalAppData%\SsmsExtensionManager\PackageCache`.
-- Supports removing uninstalled extensions from the list and deleting their cached VSIX packages.
-- Supports Velopack app self-updates from GitHub Releases when installed from the setup package.
+## What It Does
+
+- Finds SSMS 22+ installations and scans installed extensions.
+- Shows installed version, latest version, publisher, scope, and update source.
+- Installs a local `.vsix` or a `.zip` that contains one `.vsix`.
+- Updates extensions from GitHub releases or direct downloadable `.vsix`/`.zip` links.
+- Reinstalls managed extensions from the local cache after uninstall.
+- Removes uninstalled extensions from the list when you no longer want to track them.
+
+## Why Use It
+
+SSMS does not make third-party extension management especially friendly. This app gives you one place to:
+
+- see what is installed
+- check whether updates exist
+- install or reinstall extensions
+- keep user-supplied update sources attached to each extension
 
 ## Important Caveat
 
-Microsoft does not officially support third-party SSMS extensions. This app intentionally treats VSIX identity as the source of truth and verifies that downloaded update candidates match the installed VSIX identity before updating.
+Microsoft does not officially support third-party SSMS extensions. This app verifies VSIX identity before updating so it does not blindly install a mismatched package.
 
-## Run
+## Get It
 
-In VS Code, run the `Run app for testing` task.
+Download the latest packaged release from [GitHub Releases](https://github.com/Blake-goofy/ssms-extension-manager/releases/latest).
 
-```powershell
-dotnet run --project .\SsmsExtensionManager.App\SsmsExtensionManager.App.csproj
-```
+## Technical Docs
 
-## Test
-
-```powershell
-dotnet test .\SsmsExtensionManager.slnx
-```
-
-## Release
-
-Releases are packaged with Velopack and hosted on GitHub Releases.
-
-The release workflow stamps the app update source as the repository running the workflow:
-
-```text
-https://github.com/${{ github.repository }}
-```
-
-To create a release, run the `release` workflow in GitHub with a version such as `0.1.0`, or push a tag:
-
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-## Known Gaps
-
-- ZIP releases containing multiple VSIX files currently fail with a clear error instead of presenting a chooser.
-- Protected per-machine installs may require elevation from SSMS's VSIX installer.
-- Extensions installed outside this app can remain visible after uninstall, but reinstall requires a cached VSIX from this app or a configured downloadable update source.
+Developer and release notes live in [docs/technical-README.md](docs/technical-README.md).
