@@ -21,12 +21,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -67,8 +67,7 @@ jobs:
           -p:AppUpdateSourceUrl=https://github.com/${{ github.repository }}
           -p:ContinuousIntegrationBuild=true
 
-      - name: Detect Trusted Signing configuration
-        id: trusted-signing
+      - name: Validate Trusted Signing configuration
         shell: pwsh
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -77,21 +76,29 @@ jobs:
           TRUSTED_SIGNING_ACCOUNT: ${{ vars.TRUSTED_SIGNING_ACCOUNT }}
           TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ vars.TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
           TRUSTED_SIGNING_ENDPOINT: ${{ vars.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_EXPECTED_SUBJECT: ${{ vars.TRUSTED_SIGNING_EXPECTED_SUBJECT }}
         run: |
-          $requiredValues = @(
-            $env:AZURE_CLIENT_ID,
-            $env:AZURE_TENANT_ID,
-            $env:AZURE_SUBSCRIPTION_ID,
-            $env:TRUSTED_SIGNING_ACCOUNT,
-            $env:TRUSTED_SIGNING_CERTIFICATE_PROFILE,
-            $env:TRUSTED_SIGNING_ENDPOINT
+          $requiredValues = [ordered]@{
+            AZURE_CLIENT_ID = $env:AZURE_CLIENT_ID
+            AZURE_TENANT_ID = $env:AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID = $env:AZURE_SUBSCRIPTION_ID
+            TRUSTED_SIGNING_ACCOUNT = $env:TRUSTED_SIGNING_ACCOUNT
+            TRUSTED_SIGNING_CERTIFICATE_PROFILE = $env:TRUSTED_SIGNING_CERTIFICATE_PROFILE
+            TRUSTED_SIGNING_ENDPOINT = $env:TRUSTED_SIGNING_ENDPOINT
+            TRUSTED_SIGNING_EXPECTED_SUBJECT = $env:TRUSTED_SIGNING_EXPECTED_SUBJECT
+          }
+
+          $missing = @(
+            $requiredValues.GetEnumerator()
+              | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) }
+              | ForEach-Object { $_.Key }
           )
 
-          $enabled = ($requiredValues | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -eq 0
-          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($missing.Count -gt 0) {
+            throw "Trusted Signing is required for releases. Missing: $($missing -join ', ')."
+          }
 
       - name: Azure login for Trusted Signing
-        if: steps.trusted-signing.outputs.enabled == 'true'
         uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -99,7 +106,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Create Trusted Signing metadata
-        if: steps.trusted-signing.outputs.enabled == 'true'
         shell: pwsh
         env:
           TRUSTED_SIGNING_ACCOUNT: ${{ vars.TRUSTED_SIGNING_ACCOUNT }}
@@ -124,8 +130,7 @@ jobs:
             )
           } | ConvertTo-Json -Depth 3 | Set-Content -Path .\artifacts\trusted-signing-metadata.json -Encoding utf8
 
-      - name: Pack Velopack release with Trusted Signing
-        if: steps.trusted-signing.outputs.enabled == 'true'
+      - name: Pack signed Velopack release
         run: >
           dotnet tool run vpk pack
           --packId SsmsExtensionManager
@@ -138,18 +143,46 @@ jobs:
           --runtime win-x64
           --azureTrustedSignFile .\artifacts\trusted-signing-metadata.json
 
-      - name: Pack Velopack release
-        if: steps.trusted-signing.outputs.enabled != 'true'
-        run: >
-          dotnet tool run vpk pack
-          --packId SsmsExtensionManager
-          --packVersion ${{ steps.version.outputs.version }}
-          --packDir .\artifacts\publish
-          --mainExe SsmsExtensionManager.App.exe
-          --packTitle "SSMS Extension Manager"
-          --outputDir .\artifacts\Releases
-          --channel win
-          --runtime win-x64
+      - name: Verify Authenticode signatures
+        shell: pwsh
+        env:
+          EXPECTED_SIGNER_SUBJECT: ${{ vars.TRUSTED_SIGNING_EXPECTED_SUBJECT }}
+        run: |
+          function Assert-SignedFile {
+            param([Parameter(Mandatory)][string] $Path)
+
+            $signature = Get-AuthenticodeSignature -FilePath $Path
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature for '$Path': $($signature.Status) $($signature.StatusMessage)"
+            }
+
+            $subject = $signature.SignerCertificate.Subject
+            if (![string]::IsNullOrWhiteSpace($env:EXPECTED_SIGNER_SUBJECT)
+                -and $subject -notlike "*$env:EXPECTED_SIGNER_SUBJECT*") {
+              throw "Unexpected signer for '$Path': '$subject'. Expected subject containing '$env:EXPECTED_SIGNER_SUBJECT'."
+            }
+
+            Write-Host "Verified Authenticode signature: $Path ($subject)"
+          }
+
+          Assert-SignedFile -Path ".\artifacts\Releases\SsmsExtensionManager-win-Setup.exe"
+
+          $extractRoot = Join-Path $env:RUNNER_TEMP "signature-check"
+          if (Test-Path $extractRoot) {
+            Remove-Item -LiteralPath $extractRoot -Recurse -Force
+          }
+
+          $archives = Get-ChildItem -Path .\artifacts\Releases -File |
+            Where-Object { $_.Extension -in ".zip", ".nupkg" }
+
+          foreach ($archive in $archives) {
+            $destination = Join-Path $extractRoot $archive.BaseName
+            Expand-Archive -LiteralPath $archive.FullName -DestinationPath $destination
+
+            foreach ($exe in Get-ChildItem -Path $destination -Recurse -File -Filter *.exe) {
+              Assert-SignedFile -Path $exe.FullName
+            }
+          }
 
       - name: Upload GitHub release
         run: >
