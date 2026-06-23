@@ -28,7 +28,7 @@ Microsoft does not officially support third-party SSMS extensions. This app veri
 
 ## Get It
 
-Download the latest packaged release from [GitHub Releases](https://github.com/Blake-goofy/ssms-extension-manager/releases/latest).
+Download the latest `SsmsExtensionManager-win-Setup.exe` from [GitHub Releases](https://github.com/Blake-goofy/ssms-extension-manager/releases/latest).
 
 ## Technical Docs
 
