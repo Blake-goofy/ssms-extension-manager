@@ -68,7 +68,7 @@ public partial class MainWindow : Window
     private bool _syncingManageSelection;
     private DateTime? _lastSettingsFileWriteTimeUtc;
     private CancellationTokenSource? _busyCancellationTokenSource;
-    private readonly AsyncLocal<int> _busyScopeDepth = new();
+    private int _busyScopeDepth;
     private bool _isBusy;
     private readonly SemaphoreSlim _galleryLoadSemaphore = new(1, 1);
     private readonly SemaphoreSlim _galleryCatalogLoadSemaphore = new(1, 1);
@@ -605,8 +605,6 @@ public partial class MainWindow : Window
 
         _appUpdateService.ApplyAndRestart(update);
     }
-
-    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 
     private void MinimizeWindow_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
@@ -1682,8 +1680,8 @@ public partial class MainWindow : Window
                     }
 
                     await SaveRecordAsync(
-                        record.Manifest,
                         ssmsInstance,
+                        record.Manifest,
                         source,
                         record.CachedVsixPath,
                         isInstalled: false,
@@ -1938,18 +1936,6 @@ public partial class MainWindow : Window
         DateTimeOffset? lastSeenAt = null,
         string? timestampKind = null,
         DateTimeOffset? timestampAt = null)
-        => await SaveRecordAsync(manifest, instance, source, cachedVsixPath, isInstalled, installedVersionOverride, lastSeenAt, timestampKind, timestampAt);
-
-    private async Task SaveRecordAsync(
-        VsixManifest manifest,
-        SsmsInstance instance,
-        UpdateSource? source,
-        string? cachedVsixPath,
-        bool isInstalled,
-        string? installedVersionOverride,
-        DateTimeOffset? lastSeenAt = null,
-        string? timestampKind = null,
-        DateTimeOffset? timestampAt = null)
     {
         cachedVsixPath = PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedVsixPath, AppPaths.PackageCacheRoot, out string normalizedCachedVsixPath)
             ? normalizedCachedVsixPath
@@ -2116,7 +2102,7 @@ public partial class MainWindow : Window
     {
         if (_isBusy)
         {
-            if (_busyScopeDepth.Value > 0 || allowConcurrent)
+            if (_busyScopeDepth > 0 || allowConcurrent)
             {
                 await RunNestedBusyAsync(status, action);
             }
@@ -2186,8 +2172,8 @@ public partial class MainWindow : Window
 
     private async Task RunBusyActionAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
     {
-        int previousBusyScopeDepth = _busyScopeDepth.Value;
-        _busyScopeDepth.Value = previousBusyScopeDepth + 1;
+        int previousBusyScopeDepth = _busyScopeDepth;
+        _busyScopeDepth = previousBusyScopeDepth + 1;
 
         try
         {
@@ -2195,7 +2181,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _busyScopeDepth.Value = previousBusyScopeDepth;
+            _busyScopeDepth = previousBusyScopeDepth;
         }
     }
 

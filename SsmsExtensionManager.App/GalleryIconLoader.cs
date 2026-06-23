@@ -33,6 +33,8 @@ internal sealed class GalleryIconLoader(HttpClient httpClient)
                 return null;
             }
 
+            // Keep SkiaSharp here: WPF's BitmapImage/DrawingVisual resize path made downloaded
+            // gallery icons visibly pixelated when centered into the 128px transparent square.
             using SKImage sourceImage = SKImage.FromBitmap(sourceBitmap);
             using SKSurface surface = SKSurface.Create(new SKImageInfo(TargetPixelSize, TargetPixelSize, SKColorType.Bgra8888, SKAlphaType.Premul));
             SKCanvas canvas = surface.Canvas;

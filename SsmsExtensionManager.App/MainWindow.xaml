@@ -441,7 +441,7 @@
                 <MenuItem Header="_File">
                     <MenuItem Header="_Install VSIX/ZIP" Click="InstallLocal_Click" />
                     <Separator />
-                    <MenuItem Header="E_xit" Click="Exit_Click" />
+                    <MenuItem Header="E_xit" Click="CloseWindow_Click" />
                 </MenuItem>
                 <MenuItem Header="_View">
                     <MenuItem Header="_Refresh" Click="Refresh_Click" />

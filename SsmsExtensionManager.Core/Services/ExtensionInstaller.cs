@@ -69,7 +69,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             : OperationResult.Fail(installerResult.Message);
     }
 
-    private static VsixInstallerResult RunVsixInstaller(SsmsInstance instance, string arguments, CancellationToken cancellationToken, bool useShellExecute = false)
+    private static VsixInstallerResult RunVsixInstaller(SsmsInstance instance, string arguments, CancellationToken cancellationToken)
     {
         string installerPath = SsmsPaths.GetVsixInstallerPath(instance.InstallationPath);
         if (!File.Exists(installerPath))
@@ -84,8 +84,7 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             StartInfo = new ProcessStartInfo
             {
                 FileName = installerPath,
-                Arguments = arguments,
-                UseShellExecute = useShellExecute
+                Arguments = arguments
             }
         };
 
