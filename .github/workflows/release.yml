@@ -157,8 +157,7 @@ jobs:
             }
 
             $subject = $signature.SignerCertificate.Subject
-            if (![string]::IsNullOrWhiteSpace($env:EXPECTED_SIGNER_SUBJECT)
-                -and $subject -notlike "*$env:EXPECTED_SIGNER_SUBJECT*") {
+            if (![string]::IsNullOrWhiteSpace($env:EXPECTED_SIGNER_SUBJECT) -and $subject -notlike "*$env:EXPECTED_SIGNER_SUBJECT*") {
               throw "Unexpected signer for '$Path': '$subject'. Expected subject containing '$env:EXPECTED_SIGNER_SUBJECT'."
             }
 
