@@ -269,6 +269,16 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public void InstalledExtension_CurrentVersionUsesScannedManifestVersion()
+    {
+        var manifest = new VsixManifest("Sample.Extension", "2.0.0", "Sample Publisher", "Sample Extension", null, null, null);
+        SsmsInstance instance = new("SSMS22.Test", "SSMS 22 Test", "22.0", "C:\\SSMS", []);
+        InstalledExtension extension = new(manifest, instance, "C:\\SSMS\\Extensions\\Sample.Extension", true, null, null, "2.2.6");
+
+        Assert.Equal("2.0.0", extension.CurrentVersion);
+    }
+
+    [Fact]
     public void GalleryFeedReader_ReadsAtomEntries()
     {
         using MemoryStream stream = new("""

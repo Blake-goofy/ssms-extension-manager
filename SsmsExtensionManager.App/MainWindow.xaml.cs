@@ -1554,11 +1554,10 @@ public partial class MainWindow : Window
                 UpdateSource? source = extensionSource ?? recordSource ?? InferUpdateSource(extension.Manifest) ?? InferUpdateSource(galleryExtension);
                 bool removedStaleGallerySource = GalleryExtensionMatcher.IsGallerySource(extension.UpdateSource) && extensionSource is null;
                 bool removedStaleRecordGallerySource = GalleryExtensionMatcher.IsGallerySource(record?.UpdateSource) && recordSource is null;
-                string? normalizedInstalledVersionOverride = NormalizeInstalledVersionOverride(record?.InstalledVersionOverride, extension.Manifest.Version);
                 InstalledExtension current = extension with
                 {
                     UpdateSource = source,
-                    InstalledVersionOverride = normalizedInstalledVersionOverride
+                    InstalledVersionOverride = null
                 };
                 bool shouldRefreshLatest = checkUpdates || refreshLatestSet.Contains(extension.Manifest.Id);
                 AvailableUpdate? latest = shouldRefreshLatest && source is { } downloadableSource && IsDownloadableSource(downloadableSource)
@@ -1567,13 +1566,6 @@ public partial class MainWindow : Window
                 if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
                 {
                     return;
-                }
-
-                string? installedVersionOverride = current.InstalledVersionOverride
-                    ?? InferInstalledVersionOverride(record, latest, current.Manifest.Version);
-                if (installedVersionOverride is not null && !string.Equals(installedVersionOverride, current.InstalledVersionOverride, StringComparison.OrdinalIgnoreCase))
-                {
-                    current = current with { InstalledVersionOverride = installedVersionOverride };
                 }
 
                 AvailableUpdate? update = latest is not null && VersionComparer.IsNewer(latest.Version, current.CurrentVersion)
@@ -1624,7 +1616,7 @@ public partial class MainWindow : Window
                     source,
                     record?.CachedVsixPath,
                     isInstalled: true,
-                    current.InstalledVersionOverride,
+                    installedVersionOverride: null,
                     lastSeenAt: lastSeenAt,
                     timestampKind: timestampKind,
                     timestampAt: timestampAt);
@@ -1937,6 +1929,7 @@ public partial class MainWindow : Window
         string? timestampKind = null,
         DateTimeOffset? timestampAt = null)
     {
+        installedVersionOverride = isInstalled ? null : installedVersionOverride;
         cachedVsixPath = PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedVsixPath, AppPaths.PackageCacheRoot, out string normalizedCachedVsixPath)
             ? normalizedCachedVsixPath
             : null;
@@ -1976,44 +1969,6 @@ public partial class MainWindow : Window
                 galleryExtension.PackageUri,
                 galleryExtension.PackageUri.ToString(),
                 galleryExtension.PublishedAt ?? galleryExtension.UpdatedAt ?? DateTimeOffset.MinValue);
-
-    private static string? InferInstalledVersionOverride(ManagedExtensionRecord? record, AvailableUpdate? latest, string manifestVersion)
-    {
-        if (record?.InstalledVersionOverride is not null)
-        {
-            return NormalizeInstalledVersionOverride(record.InstalledVersionOverride, manifestVersion);
-        }
-
-        if (record is not { IsInstalled: true, CachedVsixPath: { } cachedPath }
-            || latest is null
-            || !PackageCachePathPolicy.TryNormalizeCachedVsixPath(cachedPath, AppPaths.PackageCacheRoot, out string normalizedCachedPath)
-            || !File.Exists(normalizedCachedPath))
-        {
-            return null;
-        }
-
-        if (!VersionComparer.IsNewer(latest.Version, manifestVersion))
-        {
-            return null;
-        }
-
-        DateTimeOffset cachedTimestamp = File.GetLastWriteTimeUtc(normalizedCachedPath);
-        return cachedTimestamp >= latest.PublishedAt.UtcDateTime.AddMinutes(-1)
-            ? latest.Version
-            : null;
-    }
-
-    private static string? NormalizeInstalledVersionOverride(string? installedVersionOverride, string manifestVersion)
-    {
-        if (string.IsNullOrWhiteSpace(installedVersionOverride))
-        {
-            return null;
-        }
-
-        return VersionComparer.IsNewer(installedVersionOverride, manifestVersion)
-            ? installedVersionOverride
-            : null;
-    }
 
     private static string NormalizeTimestampKind(string? timestampKind, bool isInstalled)
     {

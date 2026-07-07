@@ -9,5 +9,5 @@ public sealed record InstalledExtension(
     AvailableUpdate? AvailableUpdate,
     string? InstalledVersionOverride = null)
 {
-    public string CurrentVersion => InstalledVersionOverride ?? Manifest.Version;
+    public string CurrentVersion => Manifest.Version;
 }
