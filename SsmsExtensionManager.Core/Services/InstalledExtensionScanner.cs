@@ -44,8 +44,10 @@ public sealed class InstalledExtensionScanner(VsixManifestReader manifestReader,
         }
 
         return extensions
-            .GroupBy(extension => $"{extension.SsmsInstance.Id}|{extension.Manifest.Id}|{extension.InstallPath}", StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+            .GroupBy(extension => $"{extension.SsmsInstance.Id}|{extension.Manifest.Id}|{extension.Manifest.Publisher}|{extension.IsPerUser}", StringComparer.OrdinalIgnoreCase)
+            // ponytail: SSMS can leave old version folders after an update; keep newest by manifest version.
+            .Select(group => group.Aggregate((current, candidate) =>
+                VersionComparer.IsNewer(candidate.Manifest.Version, current.Manifest.Version) ? candidate : current))
             .OrderBy(extension => extension.Manifest.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

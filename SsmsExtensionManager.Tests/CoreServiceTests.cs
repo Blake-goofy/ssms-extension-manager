@@ -308,6 +308,34 @@ public sealed class CoreServiceTests
     }
 
     [Fact]
+    public async Task InstalledExtensionScanner_KeepsNewestVersionWhenUpdateLeavesOldFolder()
+    {
+        string tempRoot = CreateTempRoot();
+        string extensionsRoot = Path.Combine(tempRoot, "Extensions");
+        CreateInstalledExtensionFolder(
+            Path.Combine(extensionsRoot, "TSqlAnalyzer", "1.0.792"),
+            "ErikEJ.SqlServer.Rules",
+            "1.0.792",
+            "ErikEJ",
+            "T-SQL Analyzer for SSMS");
+        CreateInstalledExtensionFolder(
+            Path.Combine(extensionsRoot, "TSqlAnalyzer", "1.0.796"),
+            "ErikEJ.SqlServer.Rules",
+            "1.0.796",
+            "ErikEJ",
+            "T-SQL Analyzer for SSMS");
+        InstalledExtensionScanner scanner = new(
+            new VsixManifestReader(),
+            new UpdateSourceStore(Path.Combine(tempRoot, "extension-sources.json")));
+        SsmsInstance instance = new("SSMS22.Test", "SSMS 22 Test", "22.0", tempRoot, [extensionsRoot]);
+
+        IReadOnlyList<InstalledExtension> extensions = await scanner.ScanAsync([instance]);
+
+        InstalledExtension extension = Assert.Single(extensions);
+        Assert.Equal("1.0.796", extension.Manifest.Version);
+    }
+
+    [Fact]
     public void GalleryExtensionMatcher_DoesNotMatchSameIdAndNameWithDifferentPublisher()
     {
         var manifest = new VsixManifest("SqlFormatter.Shared", "1.0.0", "Microsoft", "SQL Formatter", null, null, null);
@@ -1041,6 +1069,18 @@ public sealed class CoreServiceTests
         ZipArchiveEntry manifest = archive.CreateEntry("extension.vsixmanifest");
         using Stream stream = manifest.Open();
         using StreamWriter writer = new(stream);
+        WriteVsixManifest(writer, id, version, publisher, displayName);
+    }
+
+    private static void CreateInstalledExtensionFolder(string path, string id, string version, string publisher, string displayName)
+    {
+        Directory.CreateDirectory(path);
+        using StreamWriter writer = File.CreateText(Path.Combine(path, "extension.vsixmanifest"));
+        WriteVsixManifest(writer, id, version, publisher, displayName);
+    }
+
+    private static void WriteVsixManifest(TextWriter writer, string id, string version, string publisher, string displayName)
+    {
         writer.Write($$"""
             <?xml version="1.0" encoding="utf-8"?>
             <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
