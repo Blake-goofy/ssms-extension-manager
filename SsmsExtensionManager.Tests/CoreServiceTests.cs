@@ -52,6 +52,20 @@ public sealed class CoreServiceTests
     }
 
     [Theory]
+    [InlineData("1.0.0", "1.0.0", true)]
+    [InlineData("0.9.0", "1.0.0", true)]
+    [InlineData("1.0.1", "1.0.0", false)]
+    public void ExtensionInstaller_ReplacesOnlySameOrOlderTrustedInstalls(string candidateVersion, string installedVersion, bool expected)
+    {
+        var installed = new VsixManifest("Sample.Extension", installedVersion, "Sample Publisher", "Sample Extension", null, null, null);
+        var candidate = new VsixManifest("Sample.Extension", candidateVersion, "Sample Publisher", "Sample Extension", null, null, null);
+
+        bool replace = ExtensionInstaller.RequiresUninstallBeforeInstall(installed, candidate);
+
+        Assert.Equal(expected, replace);
+    }
+
+    [Theory]
     [InlineData("https://example.com/extensions/sample.vsix", UpdateSourceType.DirectVsixUrl)]
     [InlineData("https://example.com/releases/sample.zip?download=1", UpdateSourceType.DirectZipUrl)]
     public void ExtensionPackageSource_ClassifiesSupportedDirectUrls(string url, UpdateSourceType expected)

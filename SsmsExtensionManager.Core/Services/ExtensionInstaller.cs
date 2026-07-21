@@ -54,6 +54,17 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
             return OperationResult.Fail(identityError);
         }
 
+        if (RequiresUninstallBeforeInstall(installedExtension.Manifest, asset.Manifest))
+        {
+            VsixInstallerResult uninstallResult = RunVsixInstaller(installedExtension.SsmsInstance, BuildUninstallArguments(installedExtension.Manifest.Id), cancellationToken);
+            if (!uninstallResult.Success)
+            {
+                return OperationResult.Fail(uninstallResult.Message);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
         VsixInstallerResult installerResult = RunVsixInstaller(installedExtension.SsmsInstance, BuildInstallArguments(asset.FilePath), cancellationToken);
 
         return installerResult.Success
@@ -133,6 +144,10 @@ public sealed class ExtensionInstaller(ExtensionAssetResolver assetResolver)
     internal static string BuildInstallArguments(string assetPath) => $"/quiet {QuoteArgument(assetPath)}";
 
     private static string BuildUninstallArguments(string extensionId) => $"/quiet /u:{extensionId}";
+
+    internal static bool RequiresUninstallBeforeInstall(VsixManifest installed, VsixManifest candidate)
+        => VsixUpdateIdentityPolicy.IsTrustedUpdate(installed, candidate)
+            && !VersionComparer.IsNewer(candidate.Version, installed.Version);
 
     private static bool IsAlreadyInstalledFailure(int exitCode, string logText)
         => exitCode == 1001

@@ -187,7 +187,12 @@ public partial class MainWindow : Window
 
             ExtensionAsset asset = _assetResolver.Resolve(dialog.FileName, AppPaths.TempAssetsRoot);
             string cachedVsix = _packageCache.CacheVsix(asset.FilePath, asset.Manifest);
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken), cancellationToken);
+            InstalledExtension? installedExtension = await FindInstalledExtensionAsync(instance.Instance, asset.Manifest, cancellationToken);
+            OperationResult result = await Task.Run(
+                () => installedExtension is null
+                    ? _installer.InstallLocalAsset(instance.Instance, cachedVsix, cancellationToken)
+                    : _installer.UpdateInstalledExtension(installedExtension, cachedVsix, cancellationToken),
+                cancellationToken);
             if (result.Success)
             {
                 await SaveRecordAsync(
@@ -1391,7 +1396,12 @@ public partial class MainWindow : Window
                 return;
             }
 
-            OperationResult result = await Task.Run(() => _installer.InstallLocalAsset(instance.Instance, asset.FilePath, cancellationToken), cancellationToken);
+            InstalledExtension? installedExtension = await FindInstalledExtensionAsync(instance.Instance, asset.Manifest, cancellationToken);
+            OperationResult result = await Task.Run(
+                () => installedExtension is null
+                    ? _installer.InstallLocalAsset(instance.Instance, asset.FilePath, cancellationToken)
+                    : _installer.UpdateInstalledExtension(installedExtension, asset.FilePath, cancellationToken),
+                cancellationToken);
             if (!result.Success)
             {
                 ShowMessage(result.Message);
@@ -1433,6 +1443,12 @@ public partial class MainWindow : Window
         => SameSource(previousRow?.UpdateSource, source)
             ? previousRow?.LatestRelease
             : null;
+
+    private async Task<InstalledExtension?> FindInstalledExtensionAsync(SsmsInstance instance, VsixManifest candidate, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<InstalledExtension> installed = await _scanner.ScanAsync([instance], cancellationToken);
+        return installed.FirstOrDefault(extension => VsixUpdateIdentityPolicy.IsTrustedUpdate(extension.Manifest, candidate));
+    }
 
     private static bool SameSource(UpdateSource? left, UpdateSource? right)
     {
