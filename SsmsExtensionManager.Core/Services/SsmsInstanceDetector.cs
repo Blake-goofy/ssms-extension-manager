@@ -19,7 +19,11 @@ public sealed class SsmsInstanceDetector
                 continue;
             }
 
-            AddInstance(instances, instance.InstanceId ?? instance.InstallationPath, instance.DisplayName ?? "SQL Server Management Studio", instance.InstallationVersion, instance.InstallationPath);
+            // ponytail: keep the default install's stored ID while using vswhere's ID to find its live per-user profile.
+            string id = string.Equals(Path.GetFullPath(instance.InstallationPath), Path.GetFullPath(SsmsPaths.DefaultInstallationPath), StringComparison.OrdinalIgnoreCase)
+                ? SsmsPaths.DefaultInstanceId
+                : instance.InstanceId ?? instance.InstallationPath;
+            AddInstance(instances, id, instance.DisplayName ?? "SQL Server Management Studio", instance.InstallationVersion, instance.InstallationPath, instance.InstanceId);
         }
 
         string defaultPath = SsmsPaths.DefaultInstallationPath;
@@ -36,7 +40,7 @@ public sealed class SsmsInstanceDetector
             .ToList();
     }
 
-    private static void AddInstance(List<SsmsInstance> instances, string id, string displayName, string? version, string installationPath)
+    private static void AddInstance(List<SsmsInstance> instances, string id, string displayName, string? version, string installationPath, string? profileInstanceId = null)
     {
         string normalizedInstallPath = Path.GetFullPath(installationPath);
         string localSsmsRoot = Path.Combine(
@@ -49,7 +53,7 @@ public sealed class SsmsInstanceDetector
             displayName,
             version,
             normalizedInstallPath,
-            GetExtensionRoots(normalizedInstallPath, id, localSsmsRoot)));
+            GetExtensionRoots(normalizedInstallPath, profileInstanceId ?? id, localSsmsRoot)));
     }
 
     internal static IReadOnlyList<string> GetExtensionRoots(string installationPath, string instanceId, string localSsmsRoot)
@@ -114,24 +118,10 @@ public sealed class SsmsInstanceDetector
             : null;
     }
 
-    private sealed record VswhereInstance(
+    internal sealed record VswhereInstance(
         string? InstanceId,
         string? DisplayName,
         string? InstallationVersion,
         string InstallationPath,
-        JsonElement? Catalog)
-    {
-        public string? ProductId
-        {
-            get
-            {
-                if (Catalog is not { ValueKind: JsonValueKind.Object } catalog)
-                {
-                    return null;
-                }
-
-                return catalog.TryGetProperty("productId", out JsonElement value) ? value.GetString() : null;
-            }
-        }
-    }
+        string? ProductId);
 }

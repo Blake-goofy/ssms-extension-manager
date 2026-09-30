@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text.Json;
 using SsmsExtensionManager.Core.Models;
 using SsmsExtensionManager.Core.Services;
 
@@ -137,6 +138,25 @@ public sealed class CoreServiceTests
 
         Assert.Equal([machineRoot, currentRoot], roots);
         Assert.Equal([machineRoot], SsmsInstanceDetector.GetExtensionRoots(installationPath, SsmsPaths.DefaultInstanceId, localSsmsRoot));
+    }
+
+    [Fact]
+    public void SsmsInstanceDetector_ReadsVswhereTopLevelProductId()
+    {
+        const string json = """
+            {
+              "instanceId": "2397053d",
+              "installationPath": "C:\\Program Files\\Microsoft SQL Server Management Studio 22\\Release",
+              "productId": "Microsoft.VisualStudio.Product.Ssms",
+              "catalog": { "productName": "SQL Server Management Studio" }
+            }
+            """;
+
+        SsmsInstanceDetector.VswhereInstance? instance = JsonSerializer.Deserialize<SsmsInstanceDetector.VswhereInstance>(json, JsonOptions.Default);
+
+        Assert.NotNull(instance);
+        Assert.Equal("2397053d", instance.InstanceId);
+        Assert.Equal("Microsoft.VisualStudio.Product.Ssms", instance.ProductId);
     }
 
     [Theory]
