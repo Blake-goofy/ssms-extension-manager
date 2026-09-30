@@ -26,11 +26,11 @@ The release workflow stamps the app update source as the repository running the 
 https://github.com/${{ github.repository }}
 ```
 
-To create a release, run the `release` workflow in GitHub with a version such as `0.1.0`, or push a tag:
+To create a release, run the `release` workflow in GitHub with a version such as `1.0.0`, or push a tag:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 ## Known Gaps

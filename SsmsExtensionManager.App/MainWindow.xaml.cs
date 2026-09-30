@@ -1638,7 +1638,7 @@ public partial class MainWindow : Window
                     timestampAt: timestampAt);
             }
 
-            foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !record.IsInstalled && !installedIds.Contains(record.Manifest.Id)))
+            foreach (ManagedExtensionRecord record in recordsById.Values.Where(record => !installedIds.Contains(record.Manifest.Id)))
             {
                 if (!IsCurrentExtensionLoad(loadVersion, ssmsInstance))
                 {
@@ -1661,9 +1661,7 @@ public partial class MainWindow : Window
 
                 AvailableUpdate? effectiveLatest = latest ?? InferLatestFromGallery(galleryExtension);
 
-                ManagedExtensionRecord effectiveRecord = source == record.UpdateSource
-                    ? record
-                    : record with { UpdateSource = source };
+                ManagedExtensionRecord effectiveRecord = record with { IsInstalled = false, UpdateSource = source };
                 string timestampKind = NormalizeTimestampKind(effectiveRecord.TimestampKind, isInstalled: false);
                 DateTimeOffset timestampAt = effectiveRecord.TimestampAt ?? effectiveRecord.LastSeenAt;
                 rows.Add(new ExtensionRow(ssmsInstance, null, effectiveRecord, effectiveLatest, effectiveLatest, galleryExtension, effectiveRecord.LastSeenAt, timestampKind, timestampAt));
@@ -1676,7 +1674,7 @@ public partial class MainWindow : Window
                     }
                 }
 
-                if (removedStaleRecordGallerySource || (source is not null && record.UpdateSource is null))
+                if (record.IsInstalled || removedStaleRecordGallerySource || (source is not null && record.UpdateSource is null))
                 {
                     if (source is not null)
                     {

@@ -121,6 +121,24 @@ public sealed class CoreServiceTests
         Assert.Equal(Path.Combine(installationPath, "Common7", "IDE", "Extensions"), SsmsPaths.GetMachineExtensionRoot(installationPath));
     }
 
+    [Fact]
+    public void SsmsInstanceDetector_ScansOnlyTheSelectedInstancesPerUserProfile()
+    {
+        string tempRoot = CreateTempRoot();
+        string installationPath = Path.Combine(tempRoot, "SSMS", "Release");
+        string localSsmsRoot = Path.Combine(tempRoot, "Local", "Microsoft", "SSMS");
+        string machineRoot = SsmsPaths.GetMachineExtensionRoot(installationPath);
+        string currentRoot = Path.Combine(localSsmsRoot, "22.0_2397053d", "Extensions");
+        Directory.CreateDirectory(machineRoot);
+        Directory.CreateDirectory(currentRoot);
+        Directory.CreateDirectory(Path.Combine(localSsmsRoot, "22.0_87654321", "Extensions"));
+
+        IReadOnlyList<string> roots = SsmsInstanceDetector.GetExtensionRoots(installationPath, "2397053d", localSsmsRoot);
+
+        Assert.Equal([machineRoot, currentRoot], roots);
+        Assert.Equal([machineRoot], SsmsInstanceDetector.GetExtensionRoots(installationPath, SsmsPaths.DefaultInstanceId, localSsmsRoot));
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("", null)]

@@ -39,37 +39,39 @@ public sealed class SsmsInstanceDetector
     private static void AddInstance(List<SsmsInstance> instances, string id, string displayName, string? version, string installationPath)
     {
         string normalizedInstallPath = Path.GetFullPath(installationPath);
-        List<string> extensionRoots = [];
-
-        string machineRoot = SsmsPaths.GetMachineExtensionRoot(normalizedInstallPath);
-        if (Directory.Exists(machineRoot))
-        {
-            extensionRoots.Add(machineRoot);
-        }
-
         string localSsmsRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Microsoft",
             "SSMS");
-
-        if (Directory.Exists(localSsmsRoot))
-        {
-            foreach (string root in Directory.EnumerateDirectories(localSsmsRoot, "22.*", SearchOption.TopDirectoryOnly))
-            {
-                string extensionRoot = Path.Combine(root, "Extensions");
-                if (Directory.Exists(extensionRoot))
-                {
-                    extensionRoots.Add(extensionRoot);
-                }
-            }
-        }
 
         instances.Add(new SsmsInstance(
             id,
             displayName,
             version,
             normalizedInstallPath,
-            extensionRoots.Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
+            GetExtensionRoots(normalizedInstallPath, id, localSsmsRoot)));
+    }
+
+    internal static IReadOnlyList<string> GetExtensionRoots(string installationPath, string instanceId, string localSsmsRoot)
+    {
+        List<string> extensionRoots = [];
+        string machineRoot = SsmsPaths.GetMachineExtensionRoot(installationPath);
+        if (Directory.Exists(machineRoot))
+        {
+            extensionRoots.Add(machineRoot);
+        }
+
+        // ponytail: without a vswhere instance ID, omit per-user roots; an authoritative ID is needed to avoid stale profiles.
+        if (instanceId.Length == 8 && instanceId.All(char.IsAsciiHexDigit))
+        {
+            string perUserRoot = Path.Combine(localSsmsRoot, $"22.0_{instanceId}", "Extensions");
+            if (Directory.Exists(perUserRoot))
+            {
+                extensionRoots.Add(perUserRoot);
+            }
+        }
+
+        return extensionRoots;
     }
 
     private static async Task<IReadOnlyList<VswhereInstance>> DetectWithVswhereAsync(CancellationToken cancellationToken)
