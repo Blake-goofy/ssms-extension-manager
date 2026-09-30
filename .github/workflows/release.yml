@@ -1,9 +1,6 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -37,11 +34,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME -replace "^v", ""
-          } else {
-            $version = "${{ github.event.inputs.version }}"
-          }
+          $version = "${{ github.event.inputs.version }}"
 
           if ($version -notmatch "^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$") {
             throw "Release version '$version' is not SemVer."

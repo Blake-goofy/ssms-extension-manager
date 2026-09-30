@@ -26,12 +26,7 @@ The release workflow stamps the app update source as the repository running the 
 https://github.com/${{ github.repository }}
 ```
 
-To create a release, run the `release` workflow in GitHub with a version such as `1.0.0`, or push a tag:
-
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
+To create a signed release, run the `release` workflow from `main` in GitHub with a version such as `1.0.0`. The workflow creates the release tag and uploads the signed packages.
 
 ## Known Gaps
 
