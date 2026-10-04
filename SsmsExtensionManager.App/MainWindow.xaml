@@ -699,6 +699,7 @@
                                                 <Grid>
                                                     <TextBlock x:Name="ManageTileInitialsText"
                                                                Text="{Binding Initials}"
+                                                               Visibility="Collapsed"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
                                                                FontSize="19"
@@ -788,10 +789,12 @@
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IconSource}" Value="{x:Null}">
                                             <Setter TargetName="ManageTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="ManageTileInitialsText" Property="Visibility" Value="Visible" />
                                             <Setter TargetName="ManageTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Visibility, ElementName=ManageTileIconImage}" Value="Collapsed">
                                             <Setter TargetName="ManageTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="ManageTileInitialsText" Property="Visibility" Value="Visible" />
                                             <Setter TargetName="ManageTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding HasAvailableUpdate}" Value="True">
@@ -943,6 +946,7 @@
                                                 <Grid>
                                                     <TextBlock x:Name="GalleryTileInitialsText"
                                                                Text="{Binding Initials}"
+                                                               Visibility="Collapsed"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"
                                                                FontSize="19"
@@ -1003,10 +1007,12 @@
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IconSource}" Value="{x:Null}">
                                             <Setter TargetName="GalleryTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="GalleryTileInitialsText" Property="Visibility" Value="Visible" />
                                             <Setter TargetName="GalleryTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Visibility, ElementName=GalleryTileIconImage}" Value="Collapsed">
                                             <Setter TargetName="GalleryTileIconHost" Property="Background" Value="{DynamicResource FallbackIconBackgroundBrush}" />
+                                            <Setter TargetName="GalleryTileInitialsText" Property="Visibility" Value="Visible" />
                                             <Setter TargetName="GalleryTileInitialsText" Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
